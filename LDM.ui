@@ -1,54 +1,164 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>LensDataManager</class>
- <widget class="QMainWindow" name="LensDataManager">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>828</width>
-    <height>331</height>
+    <width>822</width>
+    <height>710</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QTableWidget" name="Table">
+   <widget class="QTableWidget" name="tableWidget">
     <property name="geometry">
      <rect>
       <x>0</x>
       <y>40</y>
-      <width>781</width>
-      <height>181</height>
+      <width>820</width>
+      <height>625</height>
      </rect>
     </property>
+    <property name="frameShape">
+     <enum>QFrame::StyledPanel</enum>
+    </property>
+    <property name="midLineWidth">
+     <number>0</number>
+    </property>
+    <property name="showGrid">
+     <bool>true</bool>
+    </property>
+    <property name="gridStyle">
+     <enum>Qt::SolidLine</enum>
+    </property>
+    <property name="sortingEnabled">
+     <bool>false</bool>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
+    </property>
+    <property name="cornerButtonEnabled">
+     <bool>true</bool>
+    </property>
     <property name="rowCount">
-     <number>4</number>
+     <number>100</number>
     </property>
-    <property name="columnCount">
-     <number>7</number>
-    </property>
-    <row>
-     <property name="text">
-      <string>Object</string>
-     </property>
-    </row>
-    <row>
-     <property name="text">
-      <string>Stop</string>
-     </property>
-    </row>
-    <row>
-     <property name="text">
-      <string>Image</string>
-     </property>
-    </row>
-    <row>
-     <property name="text">
-      <string>End Of Data</string>
-     </property>
-    </row>
+    <attribute name="horizontalHeaderVisible">
+     <bool>true</bool>
+    </attribute>
+    <attribute name="verticalHeaderVisible">
+     <bool>false</bool>
+    </attribute>
+    <attribute name="verticalHeaderCascadingSectionResizes">
+     <bool>false</bool>
+    </attribute>
+    <attribute name="verticalHeaderShowSortIndicator" stdset="0">
+     <bool>false</bool>
+    </attribute>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
+    <row/>
     <column>
      <property name="text">
       <string>Surface #</string>
@@ -81,35 +191,40 @@
     </column>
     <column>
      <property name="text">
+      <string>Refract Mode</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
       <string>Y Semi-Aperture</string>
      </property>
     </column>
    </widget>
-   <widget class="QPushButton" name="B_SystemData">
+   <widget class="QWidget" name="horizontalLayoutWidget">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>10</y>
-      <width>160</width>
-      <height>20</height>
+      <x>0</x>
+      <y>0</y>
+      <width>431</width>
+      <height>41</height>
      </rect>
     </property>
-    <property name="text">
-     <string>System Data...</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="B_SurfaceProperties">
-    <property name="geometry">
-     <rect>
-      <x>180</x>
-      <y>10</y>
-      <width>160</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Surface Properties...</string>
-    </property>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="SystemData">
+       <property name="text">
+        <string>System Data...</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="SurfaceProperties">
+       <property name="text">
+        <string>Surface Properties...</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
   </widget>
  </widget>
