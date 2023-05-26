@@ -2,7 +2,7 @@ import sys
 from PyQt5 import uic
 from PyQt5.QtWidgets import QMainWindow, QApplication
 
-mypath = r"./LDM.ui"
+mypath = r"./Tools/LDM.ui"
 form_window = uic.loadUiType(mypath)[0]
 
 class MainWindow(QMainWindow, form_window):
