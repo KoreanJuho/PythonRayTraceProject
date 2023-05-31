@@ -227,15 +227,6 @@ class FiniteRayTracing:
 ldl = LensDataLoader(r'./LensDataCenter.xlsx')
 lens_data , stop_surface, image_surface = ldl.load_rdn()
 
-for lens in lens_data:
-    print(lens)
-
-print(f"Stop surface: {stop_surface}")
-print(f"Image surface: {image_surface}")
-
 prt = ParaxialRayTracing(lens_data, stop_surface, image_surface, 2.4, 5.25)
 value_fio = prt.fio("e")
 value_fir = prt.fir(value_fio)
-
-for s in value_fio:
-    print(s)
