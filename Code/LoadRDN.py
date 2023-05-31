@@ -176,6 +176,19 @@ class ParaxialRayTracing:
                     self.lens_data[current_surface]['Thickness'] = -1 * fio[current_surface]['h'+ray_type] / fio[current_surface]['u'+ray_type]
 
         return fio
+    
+    def calc_fir(self, fio):
+        fir = {}
+        
+        fir['EFL'] = fio[0]['hmy'] / fio[self.image_surface-1]['hcy']
+        fir['BFL'] = fio[self.image_surface-1]['hmy'] / fio[self.image_surface-1]['hcy']
+        
+        fir['ENP'] = - fio[1]['hcy'] / fio[0]['ucy']
+        fir['EPD'] = 2 * (fio[1]['hmy'] + fir['ENP'] * fio[0]['umy'])
+        fir['EXP'] = - fio[self.image_surface-1]['hcy'] / fio[self.image_surface-1]['ucy']
+        fir['EXD'] = 2 * (fio[self.image_surface-1]['hmy'] + fir['EXP'] * fio[self.image_surface-1]['umy'])
+        
+        return fir
 
 ldl = LensDataLoader(r'./LensDataCenter.xlsx')
 lens_data , stop_surface, image_surface = ldl.load_rdn()
@@ -188,6 +201,7 @@ print(f"Image surface: {image_surface}")
 
 prt = ParaxialRayTracing(lens_data, stop_surface, image_surface)
 fio = prt.calc_fio(2.4, 5.25, "e")
+fir = prt.calc_fir(fio)
 
 for s in fio:
     print(s)
