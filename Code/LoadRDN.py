@@ -2,7 +2,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from typing import List, Dict, Optional, Union
 from openpyxl.worksheet.worksheet import Worksheet
-from numpy import arcsin, tan
+from numpy import sin, tan, arcsin, arctan, sqrt
 
 class LensDataLoader:
     def __init__(self, LDC_path):
@@ -95,10 +95,12 @@ class LensDataLoader:
         raise ValueError(f"Could not find refractive index data for lens '{lens_name}'")
 
 class ParaxialRayTracing:
-    def __init__(self, lens_data: List[Dict[str, Union[str, int, float, Dict[str, float]]]], stop_surface: int, image_surface: int):
+    def __init__(self, lens_data: List[Dict[str, Union[str, int, float, Dict[str, float]]]], stop_surface: int, image_surface: int, fno: float, yim: float):
         self.lens_data = lens_data
         self.stop_surface = stop_surface
         self.image_surface = image_surface
+        self.fno = fno
+        self.yim = yim
 
     def calculate_system_matrix(self, start_surface: int, finish_surface: int, wavelength: str) -> Dict[str, float]:
         size = finish_surface - start_surface + 1
@@ -144,51 +146,83 @@ class ParaxialRayTracing:
                                                 gaussian_bracket[current_point - 2])
         return gaussian_bracket[finish - 1]
     
-    def calc_fio(self, fno: float, yim: float, wavelength: str) -> List[Dict[str, float]]:
+    def fio(self, wavelength: str) -> List[Dict[str, float]]:
         system_matrix = self.calculate_system_matrix(1, self.image_surface - 1 , wavelength)
         stop_system_matrix = self.calculate_system_matrix(1, self.stop_surface, wavelength)
         
-        fio = [{'hmy': 0.0, 'umy': 0.0, 'hcy': 0.0, 'ucy': 0.0} for _ in range(self.image_surface + 1)]
+        v_fio = [{'hmy': 0.0, 'umy': 0.0, 'hcy': 0.0, 'ucy': 0.0} for _ in range(self.image_surface + 1)]
         
         if self.lens_data[0]['Thickness'] >= 10000000000:
-            fio[0]['hmy'] = 0.0
-            fio[0]['umy'] = 0.0
-            fio[1]['hmy'] = 1 / system_matrix['C'] / 2 / fno
+            v_fio[0]['hmy'] = 0.0
+            v_fio[0]['umy'] = 0.0
+            v_fio[1]['hmy'] = 1 / system_matrix['C'] / 2 / self.fno
         else:
-            na = 1 / 2 / fno
+            na = 1 / 2 / self.fno
             nao = - na / system_matrix['D']
-            fio[0]['hmy'] = 0.0
-            fio[0]['umy'] = tan(arcsin(nao))
-            fio[1]['hmy'] = self.lens_data[0]['Thickness'] * fio[0]['umy']
+            v_fio[0]['hmy'] = 0.0
+            v_fio[0]['umy'] = tan(arcsin(nao))
+            v_fio[1]['hmy'] = self.lens_data[0]['Thickness'] * v_fio[0]['umy']
 
-        fio[0]['hcy'] = yim * system_matrix['D']
-        fio[0]['ucy'] = stop_system_matrix['A'] / stop_system_matrix['B'] * fio[0]['hcy']
-        fio[1]['hcy'] = stop_system_matrix['B_dummy'] / stop_system_matrix['A'] * fio[0]['ucy']
+        v_fio[0]['hcy'] = self.yim * system_matrix['D']
+        v_fio[0]['ucy'] = stop_system_matrix['A'] / stop_system_matrix['B'] * v_fio[0]['hcy']
+        v_fio[1]['hcy'] = stop_system_matrix['B_dummy'] / stop_system_matrix['A'] * v_fio[0]['ucy']
         
         for ray_type in ['my', 'cy']:
             for current_surface in range(1, self.image_surface + 1):
                 if current_surface != 1:
-                    fio[current_surface]['h'+ray_type] = fio[current_surface - 1]['h'+ray_type] + self.lens_data[current_surface - 1]['Thickness'] * fio[current_surface - 1]['u'+ray_type]
+                    v_fio[current_surface]['h'+ray_type] = v_fio[current_surface - 1]['h'+ray_type] + self.lens_data[current_surface - 1]['Thickness'] * v_fio[current_surface - 1]['u'+ray_type]
 
-                fio[current_surface]['u'+ray_type] = (self.lens_data[current_surface - 1]['RefractiveIndex'][wavelength] * fio[current_surface - 1]['u'+ray_type] - fio[current_surface]['h'+ray_type] * (self.lens_data[current_surface]['RefractiveIndex'][wavelength] - self.lens_data[current_surface - 1]['RefractiveIndex'][wavelength]) / self.lens_data[current_surface]['Y_radius']) / self.lens_data[current_surface]['RefractiveIndex'][wavelength]
+                v_fio[current_surface]['u'+ray_type] = (self.lens_data[current_surface - 1]['RefractiveIndex'][wavelength] * v_fio[current_surface - 1]['u'+ray_type] - v_fio[current_surface]['h'+ray_type] * (self.lens_data[current_surface]['RefractiveIndex'][wavelength] - self.lens_data[current_surface - 1]['RefractiveIndex'][wavelength]) / self.lens_data[current_surface]['Y_radius']) / self.lens_data[current_surface]['RefractiveIndex'][wavelength]
 
                 if current_surface == (self.image_surface - 1) and ray_type == "my":
-                    self.lens_data[current_surface]['Thickness'] = -1 * fio[current_surface]['h'+ray_type] / fio[current_surface]['u'+ray_type]
+                    self.lens_data[current_surface]['Thickness'] = -1 * v_fio[current_surface]['h'+ray_type] / v_fio[current_surface]['u'+ray_type]
 
-        return fio
+        return v_fio
     
-    def calc_fir(self, fio):
-        fir = {}
+    def fir(self, v_fio):
+        v_fir = {}
         
-        fir['EFL'] = fio[0]['hmy'] / fio[self.image_surface-1]['hcy']
-        fir['BFL'] = fio[self.image_surface-1]['hmy'] / fio[self.image_surface-1]['hcy']
+        v_fir['EFL'] = v_fio[0]['hmy'] / v_fio[self.image_surface-1]['hcy']
+        v_fir['BFL'] = v_fio[self.image_surface-1]['hmy'] / v_fio[self.image_surface-1]['hcy']
         
-        fir['ENP'] = - fio[1]['hcy'] / fio[0]['ucy']
-        fir['EPD'] = 2 * (fio[1]['hmy'] + fir['ENP'] * fio[0]['umy'])
-        fir['EXP'] = - fio[self.image_surface-1]['hcy'] / fio[self.image_surface-1]['ucy']
-        fir['EXD'] = 2 * (fio[self.image_surface-1]['hmy'] + fir['EXP'] * fio[self.image_surface-1]['umy'])
+        v_fir['ENP'] = - v_fio[1]['hcy'] / v_fio[0]['ucy']
+        v_fir['EPD'] = 2 * (v_fio[1]['hmy'] + v_fir['ENP'] * v_fio[0]['umy'])
+        v_fir['EXP'] = - v_fio[self.image_surface-1]['hcy'] / v_fio[self.image_surface-1]['ucy']
+        v_fir['EXD'] = 2 * (v_fio[self.image_surface-1]['hmy'] + v_fir['EXP'] * v_fio[self.image_surface-1]['umy'])
         
-        return fir
+        return v_fir
+
+class FiniteRayTracing:
+    def __init__(self, lens_data, v_fio, stop_surface, image_surface):
+        self.lens_data = lens_data
+        self.v_fio = v_fio
+        self.stop_surface = stop_surface
+        self.image_surface = image_surface
+        
+    def calc_rsi(self, wavelength, stp_x, stp_y, ojt_x, ojt_y):
+        rsi = []
+        vtc = {}
+        if ojt_x == 0 and ojt_y == 0:
+            vtc['L'] = sin(arctan(self.v_fio[0]['umy'])) * stp_x
+            vtc['M'] = sin(arctan(self.v_fio[0]['umy'])) * stp_y
+            vtc['N'] = sqrt(1 - vtc['M']**2)
+            vtc['X'] = self.v_fio[1]['hmy'] * stp_x
+            vtc['Y'] = self.v_fio[1]['hmy'] * stp_y
+            vtc['Z'] = 0
+        else:
+            vtc['L'] = 0
+            vtc['M'] = sin(arctan(self.v_fio[0]['ucy'] * ojt_y)) 
+            vtc['N'] = sqrt(1 - vtc['M']**2)
+            vtc['X'] = 0
+            vtc['Y'] = self.v_fio[0]['hcy'] * ojt_y + vtc['M'] / vtc['N'] * self.lens_data[0]['Thickness']
+            vtc['Z'] = 0
+            # Newton Rapson
+            # Skew Ray
+        
+        rsi.append(vtc)
+        
+        for current_surface in range(self.image_surface):
+            print("test")
 
 ldl = LensDataLoader(r'./LensDataCenter.xlsx')
 lens_data , stop_surface, image_surface = ldl.load_rdn()
@@ -199,9 +233,9 @@ for lens in lens_data:
 print(f"Stop surface: {stop_surface}")
 print(f"Image surface: {image_surface}")
 
-prt = ParaxialRayTracing(lens_data, stop_surface, image_surface)
-fio = prt.calc_fio(2.4, 5.25, "e")
-fir = prt.calc_fir(fio)
+prt = ParaxialRayTracing(lens_data, stop_surface, image_surface, 2.4, 5.25)
+value_fio = prt.fio("e")
+value_fir = prt.fir(value_fio)
 
-for s in fio:
+for s in value_fio:
     print(s)
