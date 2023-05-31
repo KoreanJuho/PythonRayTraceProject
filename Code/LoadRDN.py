@@ -2,21 +2,20 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from typing import List, Dict, Optional, Union
 from openpyxl.worksheet.worksheet import Worksheet
+from numpy import arcsin, tan
 
 class LensDataLoader:
-    def __init__(self):
-        self.LDC_path = r'./LensDataCenter.xlsx'
+    def __init__(self, LDC_path):
+        self.LDC_path = LDC_path 
         self.Index_path = r'./Tools/RefractiveIndexData.xlsx'
         self.Index_priority = ["CDGM", "HOYA", "SCHOTT", "HIKARI", "SUMITA", "OHARA"]
-        self.lens_data: List[Dict[str, Union[str, int, float, Dict[str, float]]]] = []
-        self.stop_surface: Optional[int] = None
-        self.image_surface: Optional[int] = None
-        self.load_rdn()
-    
+        
     def load_rdn(self):
         # Load the workbook
         wb = openpyxl.load_workbook(self.LDC_path)
 
+        lens_data = []
+        
         # Select sheets
         RDN_Sheet: Worksheet = wb['RDN']
         SurfaceProperty_Sheet: Worksheet = wb['SurfaceProperties']
@@ -33,32 +32,26 @@ class LensDataLoader:
                 'Y_radius': RDN_Sheet[f'D{row}'].value,
                 'Thickness': RDN_Sheet[f'E{row}'].value,
                 'RefractiveIndex': {wavelength: 1 for wavelength in ["C", "d", "e", "F", "g"]} 
-                                  if lens_name is None else self.load_refractive_index(lens_name)
+                                  if lens_name is None else self.__load_refractive_index(lens_name)
             }
             
             # Check if this is the stop surface
             if isinstance(cell_value, str) and cell_value.lower() == 'stop':
-                self.stop_surface = lens['Surface_number']
+                stop_surface = lens['Surface_number']
 
             # If surface type is "Asphere", retrieve aspheric coefficients from SurfaceProperty sheet
             if lens['Surface_type'] == 'Asphere':
-                lens['Aspheric_coefficients'] = self.load_aspheric_coefficients(SurfaceProperty_Sheet, lens['Surface_number'])
+                lens['Aspheric_coefficients'] = self.__load_aspheric_coefficients(SurfaceProperty_Sheet, lens['Surface_number'])
 
-            self.lens_data.append(lens)
+            lens_data.append(lens)
             row += 1
 
         # The image surface is the last one
-        self.image_surface = self.lens_data[-1]['Surface_number']
+        image_surface = lens_data[-1]['Surface_number']
+        
+        return lens_data, stop_surface, image_surface
 
-        # Now lens_data is a list of dictionaries, where each dictionary represents a lens
-        for lens in self.lens_data:
-            print(lens)
-
-        # Print the stop and image surfaces
-        print(f"Stop surface: {self.stop_surface}")
-        print(f"Image surface: {self.image_surface}")
-
-    def load_aspheric_coefficients(self, SurfaceProperty_Sheet: Worksheet, surface_number: int) -> Dict[str, float]:
+    def __load_aspheric_coefficients(self, SurfaceProperty_Sheet: Worksheet, surface_number: int) -> Dict[str, float]:
         # Scan first row of SurfaceProperty sheet to find column with this surface number
         for col in range(2, SurfaceProperty_Sheet.max_column + 1):
             if SurfaceProperty_Sheet[f'{get_column_letter(col)}1'].value == surface_number:
@@ -74,8 +67,8 @@ class LensDataLoader:
             SurfaceProperty_Sheet[f'A{coeff_row}'].value: SurfaceProperty_Sheet[f'{col_letter}{coeff_row}'].value
             for coeff_row in range(2, 12)  # 2 to 11
         }
-
-    def load_refractive_index(self, lens_name: str) -> Dict[str, float]:
+        
+    def __load_refractive_index(self, lens_name: str) -> Dict[str, float]:
         # Load refractive index data for a specific lens name from the appropriate excel sheet.
         refractive_index_data: Dict[str, float] = {}
 
@@ -101,49 +94,44 @@ class LensDataLoader:
         # if we get here, we didn't find the lens in any of the sheets
         raise ValueError(f"Could not find refractive index data for lens '{lens_name}'")
 
-class ABCD:
-    def __init__(self):
-        self.A = 0.0
-        self.B = 0.0
-        self.C = 0.0
-        self.D = 0.0
-        self.B_Dummy = 0.0
-        self.D_Dummy = 0.0
-
 class ParaxialRayTracing:
-    def __init__(self, lens_data: List[Dict[str, Union[str, int, float, Dict[str, float]]]]):
+    def __init__(self, lens_data: List[Dict[str, Union[str, int, float, Dict[str, float]]]], stop_surface: int, image_surface: int):
         self.lens_data = lens_data
+        self.stop_surface = stop_surface
+        self.image_surface = image_surface
 
-    def calculate_group_system_matrix(self, start_surface: int, finish_surface: int, wavelength: str) -> ABCD:
+    def calculate_system_matrix(self, start_surface: int, finish_surface: int, wavelength: str) -> Dict[str, float]:
         size = finish_surface - start_surface + 1
         ary_len = 2 * size
+        
+        system_matrix = {
+            'A': 0.0,
+            'B': 0.0,
+            'C': 0.0,
+            'D': 0.0,
+            'B_dummy': 0.0,
+            'D_dummy': 0.0,
+        }
 
-        group_gaussian_array = self.make_gaussian_array(ary_len, start_surface - 1, wavelength)
-        group_system_matrix = self.calculate_abcd(group_gaussian_array, ary_len)
-        return group_system_matrix
-
-    def make_gaussian_array(self, ary_len: int, start: int, wavelength: str) -> List[float]:
         gaussian_array = [-1 * self.lens_data[0]['Thickness']]
-        gaussian_array.extend([(self.lens_data[start + i // 2 + 1]['RefractiveIndex'][wavelength] - self.lens_data[start + i // 2]['RefractiveIndex'][wavelength]) / 
-                            self.lens_data[start + i // 2 + 1]['Y_radius'] if i % 2 != 0 else 
-                            -1 * self.lens_data[start + i // 2]['Thickness'] / self.lens_data[start + i // 2]['RefractiveIndex'][wavelength]
+        gaussian_array.extend([(self.lens_data[start_surface + i // 2]['RefractiveIndex'][wavelength] - self.lens_data[start_surface - 1 + i // 2]['RefractiveIndex'][wavelength]) / 
+                            self.lens_data[start_surface + i // 2]['Y_radius'] if i % 2 != 0 else 
+                            -1 * self.lens_data[start_surface + i // 2 - 1]['Thickness'] / self.lens_data[start_surface + i // 2 - 1]['RefractiveIndex'][wavelength]
                             for i in range(1, ary_len)])
-        return gaussian_array
-
-    def calculate_abcd(self, gaussian_array: List[float], ary_len: int) -> ABCD:
-        system_matrix = ABCD()
-        system_matrix.A = self.calc_gaussian_bracket(gaussian_array, 1, ary_len - 1)
-        system_matrix.B = self.calc_gaussian_bracket(gaussian_array, 0, ary_len - 1)
-        system_matrix.C = self.calc_gaussian_bracket(gaussian_array, 1, ary_len)
-        system_matrix.D = self.calc_gaussian_bracket(gaussian_array, 0, ary_len)
+        
+        system_matrix['A'] = self.__calc_gaussian_bracket(gaussian_array, 1, ary_len - 1)
+        system_matrix['B'] = self.__calc_gaussian_bracket(gaussian_array, 0, ary_len - 1)
+        system_matrix['C'] = self.__calc_gaussian_bracket(gaussian_array, 1, ary_len)
+        system_matrix['D'] = self.__calc_gaussian_bracket(gaussian_array, 0, ary_len)
 
         gaussian_array[0] = 0
-        system_matrix.B_Dummy = self.calc_gaussian_bracket(gaussian_array, 0, ary_len - 1)
-        system_matrix.D_Dummy = self.calc_gaussian_bracket(gaussian_array, 0, ary_len)
+        system_matrix['B_dummy'] = self.__calc_gaussian_bracket(gaussian_array, 0, ary_len - 1)
+        system_matrix['D_dummy'] = self.__calc_gaussian_bracket(gaussian_array, 0, ary_len)
+        
         return system_matrix
     
     @staticmethod
-    def calc_gaussian_bracket(gaussian_array: List[float], start: int, finish: int) -> float:
+    def __calc_gaussian_bracket(gaussian_array: List[float], start: int, finish: int) -> float:
         gaussian_bracket = [0] * (finish + 1)
         for current_point in range(start, finish):
             if current_point == start:
@@ -155,18 +143,51 @@ class ParaxialRayTracing:
                                                 gaussian_array[current_point] + 
                                                 gaussian_bracket[current_point - 2])
         return gaussian_bracket[finish - 1]
+    
+    def calc_fio(self, fno: float, yim: float, wavelength: str) -> List[Dict[str, float]]:
+        system_matrix = self.calculate_system_matrix(1, self.image_surface - 1 , wavelength)
+        stop_system_matrix = self.calculate_system_matrix(1, self.stop_surface, wavelength)
+        
+        fio = [{'hmy': 0.0, 'umy': 0.0, 'hcy': 0.0, 'ucy': 0.0} for _ in range(self.image_surface + 1)]
+        
+        if self.lens_data[0]['Thickness'] >= 10000000000:
+            fio[0]['hmy'] = 0.0
+            fio[0]['umy'] = 0.0
+            fio[1]['hmy'] = 1 / system_matrix['C'] / 2 / fno
+        else:
+            na = 1 / 2 / fno
+            nao = - na / system_matrix['D']
+            fio[0]['hmy'] = 0.0
+            fio[0]['umy'] = tan(arcsin(nao))
+            fio[1]['hmy'] = self.lens_data[0]['Thickness'] * fio[0]['umy']
 
+        fio[0]['hcy'] = yim * system_matrix['D']
+        fio[0]['ucy'] = stop_system_matrix['A'] / stop_system_matrix['B'] * fio[0]['hcy']
+        fio[1]['hcy'] = stop_system_matrix['B_dummy'] / stop_system_matrix['A'] * fio[0]['ucy']
+        
+        for ray_type in ['my', 'cy']:
+            for current_surface in range(1, self.image_surface + 1):
+                if current_surface != 1:
+                    fio[current_surface]['h'+ray_type] = fio[current_surface - 1]['h'+ray_type] + self.lens_data[current_surface - 1]['Thickness'] * fio[current_surface - 1]['u'+ray_type]
 
-lens = LensDataLoader()
-prt = ParaxialRayTracing(lens.lens_data)
+                fio[current_surface]['u'+ray_type] = (self.lens_data[current_surface - 1]['RefractiveIndex'][wavelength] * fio[current_surface - 1]['u'+ray_type] - fio[current_surface]['h'+ray_type] * (self.lens_data[current_surface]['RefractiveIndex'][wavelength] - self.lens_data[current_surface - 1]['RefractiveIndex'][wavelength]) / self.lens_data[current_surface]['Y_radius']) / self.lens_data[current_surface]['RefractiveIndex'][wavelength]
 
-# Specify the starting and ending surfaces and the wavelength for the tracing
-start_surface = 3  # Replace with your starting surface
-finish_surface = 4  # Replace with your ending surface
-wavelength = "e"  # Replace with your desired wavelength
+                if current_surface == (self.image_surface - 1) and ray_type == "my":
+                    self.lens_data[current_surface]['Thickness'] = -1 * fio[current_surface]['h'+ray_type] / fio[current_surface]['u'+ray_type]
 
-# Perform the tracing
-abcd = prt.calculate_group_system_matrix(start_surface, finish_surface, wavelength)
+        return fio
 
-# You can now access the results in the `abcd` object
-print(abcd.A, abcd.B, abcd.C, abcd.D, abcd.B_Dummy, abcd.D_Dummy)
+ldl = LensDataLoader(r'./LensDataCenter.xlsx')
+lens_data , stop_surface, image_surface = ldl.load_rdn()
+
+for lens in lens_data:
+    print(lens)
+
+print(f"Stop surface: {stop_surface}")
+print(f"Image surface: {image_surface}")
+
+prt = ParaxialRayTracing(lens_data, stop_surface, image_surface)
+fio = prt.calc_fio(2.4, 5.25, "e")
+
+for s in fio:
+    print(s)
