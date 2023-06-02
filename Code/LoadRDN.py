@@ -62,7 +62,8 @@ class LensDataLoader:
         # Select sheets
         RDN_Sheet: Worksheet = wb['RDN']
         SurfaceProperty_Sheet: Worksheet = wb['SurfaceProperties']
-
+        SystemData_Sheet: Worksheet = wb['SystemData']
+        
         rdn_data = []
 
         # The data starts from row 2 and continues until there's a row with no surface type
@@ -93,13 +94,21 @@ class LensDataLoader:
             rdn_data.append(rdn)
             row += 1
 
-        # The image surface is the last one
         image_surface = rdn_data[-1]['Surface_number']
 
-        # Create a dictionary that contains the fno and the list of rdns
+        fno = SystemData_Sheet['B3'].value
+        
+        last_value = None
+        for cell in SystemData_Sheet['G'][2:]:
+            if cell.value is None:
+                break
+            last_value = cell.value
+        
+        yim = last_value
+        
         lens_data = {
-            'fno': 2.4,  # Put the actual focal number here
-            'yim': 5.25,
+            'fno': fno,
+            'yim': yim,
             'stop': stop_surface,
             'img' : image_surface,
             'rdn': rdn_data
@@ -212,53 +221,147 @@ class FiniteRayTracing:
         self.stop_surface = lens_data['stop']
         self.image_surface = lens_data['img']
         self.wavelength = wavelength
-        
-    def rsi(self, stp_x, stp_y, ojt_x, ojt_y, wavelength = None):
+    
+    def Raytracing(self, v_rsi, wavelength = None):
         if wavelength is None:
             wavelength = self.wavelength
         
-        def Calc_Asphere_Surface(current_surface, k, curvature, vtc, v_rsi):
-    
-            different = None
-            counter = 0
-            while different is None or (different >= 0.000000000001 or different <= -0.000000000001):
+        for current_surface in range(self.image_surface):
+            vtc = {}
+            
+            # Transfer Equation
+            if current_surface == 0:
+                z = 0
+            else:
+                z = v_rsi[current_surface]['Z'] - self.lens_data[current_surface]['Thickness']
                 
-                counter += 1
-                if counter > 20:
-                    print(f"Calc ASP Loop exceeded 20 iterations at surface{current_surface+1}, stopping Code.")
-                    sys.exit()
-                
-                r_square = vtc['X'] ** 2 + vtc['Y'] ** 2
-                z_prime = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature ** 2 * r_square))
-                
-                time = 2
-                for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
-                    z_prime += asp * r_square ** time
-                    time += 1
-                
-                round_z_over_round_x = curvature * vtc['X'] / sqrt(1 - (1 + k) * curvature ** 2 * r_square)
-                round_z_over_round_y = curvature * vtc['Y'] / sqrt(1 - (1 + k) * curvature ** 2 * r_square)
-                
-                time = 2
-                for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
-                    round_z_over_round_x += 2 * time * asp * r_square ** (time - 1) * vtc['X']
-                    round_z_over_round_y += 2 * time * asp * r_square ** (time - 1) * vtc['Y']
-                    time += 1
-                    
-                Vector_Size = sqrt(round_z_over_round_x ** 2 + round_z_over_round_y ** 2 + 1)
-                alpha = -1 * round_z_over_round_x / Vector_Size
-                beta = -1 * round_z_over_round_y / Vector_Size
-                gamma = 1 / Vector_Size
+            if self.lens_data[current_surface + 1]['Surface_type'] == "Sphere":
+                k = 0
+            else:
+                k = self.lens_data[current_surface + 1]['K']
+            
+            curvature = 1 / self.lens_data[current_surface + 1]['Y_radius']
+            F = curvature * (v_rsi[current_surface]['X']**2 + v_rsi[current_surface]['Y']**2 + (1 + k)*z**2) - 2*z
+            G = (v_rsi[current_surface]['N'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) - curvature * (v_rsi[current_surface]['X'] * (v_rsi[current_surface]['L'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) + v_rsi[current_surface]['Y'] * (v_rsi[current_surface]['M'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) + z * (v_rsi[current_surface]['N'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) * (1 + k))
+            
+            vtc['LEN'] = F / (G + sqrt(G**2 - curvature * (1 + k * (v_rsi[current_surface]['N'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength])**2) * F))
+            
+            vtc['X'] = v_rsi[current_surface]['X'] + vtc['LEN'] * (v_rsi[current_surface]['L'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength])
+            vtc['Y'] = v_rsi[current_surface]['Y'] + vtc['LEN'] * (v_rsi[current_surface]['M'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength])
+            r_square = vtc['X']**2 + vtc['Y']**2
+            vtc['Z'] = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature**2 * r_square))
+            
+            if self.lens_data[current_surface + 1]['Surface_type'] == 'Sphere':
+                V = sqrt(1 - 2 * curvature * k * vtc['Z'] + curvature**2 * vtc['Z']**2 * k * (1 + k))
+                alpha = -1 * curvature * vtc['X'] / V
+                beta = -1 * curvature * vtc['Y'] / V
+                gamma = (1 - curvature * (1 + k) * vtc['Z']) / V
+            else: 
+                vtc, alpha, beta, gamma = self.Calc_Asphere_Surface(current_surface, k, curvature, vtc, v_rsi)
+            
+            n_cos_theta = alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M'] + gamma * v_rsi[current_surface]['N']
+            n_prime_cos_theta_prime = sqrt(self.lens_data[current_surface + 1]['RefractiveIndex'][wavelength]**2 - self.lens_data[current_surface]['RefractiveIndex'][wavelength]**2 + n_cos_theta**2)
 
-                z = (alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M']) / v_rsi[current_surface]['N'] * vtc['Z'] + gamma * z_prime
-                z /= ((alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M']) / v_rsi[current_surface]['N'] + gamma)
-                vtc['X'] = v_rsi[current_surface]['L'] / v_rsi[current_surface]['N'] * (z - vtc['Z']) + vtc['X']
-                vtc['Y'] = v_rsi[current_surface]['M'] / v_rsi[current_surface]['N'] * (z - vtc['Z']) + vtc['Y']
-                vtc['Z'] = z
+            refractive_power = n_prime_cos_theta_prime - n_cos_theta
+
+            vtc['L'] = v_rsi[current_surface]['L'] + refractive_power * alpha
+            vtc['M'] = v_rsi[current_surface]['M'] + refractive_power * beta
+            vtc['N'] = v_rsi[current_surface]['N'] + refractive_power * gamma
+            
+            v_rsi.append(vtc)
+            
+        return v_rsi
+    
+    def Calc_Asphere_Surface(self, current_surface, k, curvature, vtc, v_rsi):
+    
+        different = None
+        counter = 0
+        while different is None or (different >= 0.000000000001 or different <= -0.000000000001):
+            
+            counter += 1
+            if counter > 20:
+                print(f"Calc ASP Loop exceeded 20 iterations at surface{current_surface+1}, stopping Code.")
+                sys.exit()
+            
+            r_square = vtc['X'] ** 2 + vtc['Y'] ** 2
+            z_prime = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature ** 2 * r_square))
+            
+            time = 2
+            for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
+                z_prime += asp * r_square ** time
+                time += 1
+            
+            round_z_over_round_x = curvature * vtc['X'] / sqrt(1 - (1 + k) * curvature ** 2 * r_square)
+            round_z_over_round_y = curvature * vtc['Y'] / sqrt(1 - (1 + k) * curvature ** 2 * r_square)
+            
+            time = 2
+            for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
+                round_z_over_round_x += 2 * time * asp * r_square ** (time - 1) * vtc['X']
+                round_z_over_round_y += 2 * time * asp * r_square ** (time - 1) * vtc['Y']
+                time += 1
                 
-                different = z_prime - vtc['Z']
-                
-            return vtc, alpha, beta, gamma    
+            Vector_Size = sqrt(round_z_over_round_x ** 2 + round_z_over_round_y ** 2 + 1)
+            alpha = -1 * round_z_over_round_x / Vector_Size
+            beta = -1 * round_z_over_round_y / Vector_Size
+            gamma = 1 / Vector_Size
+
+            z = (alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M']) / v_rsi[current_surface]['N'] * vtc['Z'] + gamma * z_prime
+            z /= ((alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M']) / v_rsi[current_surface]['N'] + gamma)
+            vtc['X'] = v_rsi[current_surface]['L'] / v_rsi[current_surface]['N'] * (z - vtc['Z']) + vtc['X']
+            vtc['Y'] = v_rsi[current_surface]['M'] / v_rsi[current_surface]['N'] * (z - vtc['Z']) + vtc['Y']
+            vtc['Z'] = z
+            
+            different = z_prime - vtc['Z']
+            
+        return vtc, alpha, beta, gamma
+
+    def Newton_Rapson(self, target_surface, target, vtc, object_y, wavelength = None):
+            
+        if wavelength is None:
+            wavelength = self.wavelength
+        
+        counter = 0
+        delta_M = 0.00000001
+        
+        v_rsi = [vtc]
+        self.Raytracing(v_rsi, wavelength)
+        
+        while True:
+            counter += 1
+            
+            if counter > 20:
+                print(f"Newton Rapson Loop exceeded 20 iterations at surface{target_surface+1}, stopping Code.")
+                sys.exit()
+            
+            f_xn1 = v_rsi[target_surface]['Y']
+            xn1 = v_rsi[0]['Y']
+
+            vtc['L'] = 0
+            vtc['M'] = sin(arctan((v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y) / self.lens_data[0]['Thickness']))
+            vtc['N'] = sqrt(1 - vtc['L'] ** 2 - vtc['M'] ** 2)
+            
+            vtc['Y'] = v_rsi[0]['Y'] - delta_M
+            
+            v_rsi = [vtc]
+            self.Raytracing(v_rsi, wavelength)
+            
+            f_xn2 = v_rsi[target_surface]['Y']
+            f_prime_x = (f_xn1 - f_xn2) / delta_M
+            xn2 = xn1 + (target - f_xn1) / f_prime_x
+            
+            vtc['Y'] = xn2
+            vtc['M'] = sin(arctan((vtc['Y'] - self.v_fio[0]['hcy'] * object_y) / self.lens_data[0]['Thickness']))
+            vtc['N'] = sqrt(1 - vtc['L'] ** 2 - vtc['M'] ** 2)
+            
+            v_rsi = [vtc]
+            self.Raytracing(v_rsi, wavelength)
+
+            if target + 0.00000000000001 >= v_rsi[target_surface]['Y'] >= target - 0.00000000000001:
+                return vtc
+    
+    def rsi(self, stp_x, stp_y, ojt_x, ojt_y, wavelength = None):
+        if wavelength is None:
+            wavelength = self.wavelength
         
         def initial_value(wavelength, stp_x, stp_y, ojt_x, ojt_y):
             vtc = {}
@@ -276,7 +379,7 @@ class FiniteRayTracing:
                 vtc['X'] = 0
                 vtc['Y'] = self.v_fio[0]['hcy'] * ojt_y + vtc['M'] / vtc['N'] * self.lens_data[0]['Thickness']
                 vtc['Z'] = 0
-                vtc = Newton_Rapson(self.stop_surface, 0, vtc, ojt_y, wavelength)
+                vtc = self.Newton_Rapson(self.stop_surface, 0, vtc, ojt_y, wavelength)
                 vtc['X'] = self.v_fio[1]['hmy'] * stp_x
                 vtc['Y'] = vtc['Y'] + self.v_fio[1]['hmy'] * stp_y
                 vtc['Z'] = 0
@@ -285,102 +388,27 @@ class FiniteRayTracing:
                 vtc['N'] = sqrt(1 - vtc['L']**2 - vtc['M']**2)
             return vtc
         
-        def Newton_Rapson(target_surface, target, vtc, object_y, wavelength):
-            
-            counter = 0
-            delta_M = 0.00000001
-            
-            v_rsi = [vtc]
-            Raytracing(v_rsi, wavelength)
-            
-            while True:
-                counter += 1
-                
-                if counter > 20:
-                    print(f"Newton Rapson Loop exceeded 20 iterations at surface{target_surface+1}, stopping Code.")
-                    sys.exit()
-                
-                f_xn1 = v_rsi[target_surface]['Y']
-                xn1 = v_rsi[0]['Y']
-
-                vtc['L'] = 0
-                vtc['M'] = sin(arctan((v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y) / self.lens_data[0]['Thickness']))
-                vtc['N'] = sqrt(1 - vtc['L'] ** 2 - vtc['M'] ** 2)
-                
-                vtc['Y'] = v_rsi[0]['Y'] - delta_M
-                
-                v_rsi = [vtc]
-                Raytracing(v_rsi, wavelength)
-                
-                f_xn2 = v_rsi[target_surface]['Y']
-                f_prime_x = (f_xn1 - f_xn2) / delta_M
-                xn2 = xn1 + (target - f_xn1) / f_prime_x
-                
-                vtc['Y'] = xn2
-                vtc['M'] = sin(arctan((vtc['Y'] - self.v_fio[0]['hcy'] * object_y) / self.lens_data[0]['Thickness']))
-                vtc['N'] = sqrt(1 - vtc['L'] ** 2 - vtc['M'] ** 2)
-                
-                v_rsi = [vtc]
-                Raytracing(v_rsi, wavelength)
-
-                if target + 0.00000000000001 >= v_rsi[target_surface]['Y'] >= target - 0.00000000000001:
-                    return vtc
-        
-        def Raytracing(v_rsi, wavelength):
-            for current_surface in range(self.image_surface):
-                vtc = {}
-                
-                # Transfer Equation
-                if current_surface == 0:
-                    z = 0
-                else:
-                    z = v_rsi[current_surface]['Z'] - self.lens_data[current_surface]['Thickness']
-                    
-                if self.lens_data[current_surface + 1]['Surface_type'] == "Sphere":
-                    k = 0
-                else:
-                    k = self.lens_data[current_surface + 1]['K']
-                
-                curvature = 1 / self.lens_data[current_surface + 1]['Y_radius']
-                F = curvature * (v_rsi[current_surface]['X']**2 + v_rsi[current_surface]['Y']**2 + (1 + k)*z**2) - 2*z
-                G = (v_rsi[current_surface]['N'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) - curvature * (v_rsi[current_surface]['X'] * (v_rsi[current_surface]['L'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) + v_rsi[current_surface]['Y'] * (v_rsi[current_surface]['M'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) + z * (v_rsi[current_surface]['N'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength]) * (1 + k))
-                
-                vtc['LEN'] = F / (G + sqrt(G**2 - curvature * (1 + k * (v_rsi[current_surface]['N'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength])**2) * F))
-                
-                vtc['X'] = v_rsi[current_surface]['X'] + vtc['LEN'] * (v_rsi[current_surface]['L'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength])
-                vtc['Y'] = v_rsi[current_surface]['Y'] + vtc['LEN'] * (v_rsi[current_surface]['M'] / self.lens_data[current_surface]['RefractiveIndex'][wavelength])
-                r_square = vtc['X']**2 + vtc['Y']**2
-                vtc['Z'] = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature**2 * r_square))
-                
-                if self.lens_data[current_surface + 1]['Surface_type'] == 'Sphere':
-                    V = sqrt(1 - 2 * curvature * k * vtc['Z'] + curvature**2 * vtc['Z']**2 * k * (1 + k))
-                    alpha = -1 * curvature * vtc['X'] / V
-                    beta = -1 * curvature * vtc['Y'] / V
-                    gamma = (1 - curvature * (1 + k) * vtc['Z']) / V
-                else: 
-                    vtc, alpha, beta, gamma = Calc_Asphere_Surface(current_surface, k, curvature, vtc, v_rsi)
-                
-                n_cos_theta = alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M'] + gamma * v_rsi[current_surface]['N']
-                n_prime_cos_theta_prime = sqrt(self.lens_data[current_surface + 1]['RefractiveIndex'][wavelength]**2 - self.lens_data[current_surface]['RefractiveIndex'][wavelength]**2 + n_cos_theta**2)
-
-                refractive_power = n_prime_cos_theta_prime - n_cos_theta
-
-                vtc['L'] = v_rsi[current_surface]['L'] + refractive_power * alpha
-                vtc['M'] = v_rsi[current_surface]['M'] + refractive_power * beta
-                vtc['N'] = v_rsi[current_surface]['N'] + refractive_power * gamma
-                
-                v_rsi.append(vtc)
-                
-            return v_rsi
-        
         v_rsi = []
         v_rsi.append(initial_value(wavelength, stp_x, stp_y, ojt_x, ojt_y))
-        v_rsi = Raytracing(v_rsi, wavelength)
+        v_rsi = self.Raytracing(v_rsi, wavelength)
         
         return v_rsi
     
     def Y_SemiAperture(self):
-        self.rsi(0, 1 ,0 ,0)
+        v_rsi = self.rsi(0, 1 ,0 ,0)
+        up_ray = self.rsi(0, 1, 0, 1)
+        vtc = up_ray[0]
+        vtc = self.Newton_Rapson(self.stop_surface, v_rsi[self.stop_surface]['Y'], vtc, 1)
+        up_ray = [vtc]
+        up_ray = self.Raytracing(up_ray)
+        dw_ray = self.rsi(0, -1, 0, 1)
+        vtc = dw_ray[0]
+        vtc = self.Newton_Rapson(self.stop_surface, -v_rsi[self.stop_surface]['Y'], vtc, 1)
+        dw_ray = [vtc]
+        dw_ray = self.Raytracing(dw_ray)
+        map = []
+        map = [abs(up_ray[cs]['Y']) if abs(up_ray[cs]['Y']) >= abs(dw_ray[cs]['Y']) else abs(dw_ray[cs]['Y']) for cs in range(self.image_surface + 1)]
+        return map
 
 ldl = LensDataLoader(r'./LensDataCenter.xlsx')
 lens_data= ldl.load_rdn()
@@ -390,7 +418,7 @@ value_fio = prt.fio("e")
 value_fir = prt.fir(value_fio)
 
 frt = FiniteRayTracing(lens_data, value_fio, "e")
-value_rsi = frt.rsi(1, 0.5 ,0 ,0.5)
+map = frt.Y_SemiAperture()
 
-for a in value_rsi:
-    print(a)
+for m in map:
+    print(m)
