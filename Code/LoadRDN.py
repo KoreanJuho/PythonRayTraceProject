@@ -115,6 +115,30 @@ class LensDataLoader:
         }
         
         return lens_data
+    
+    def load_fields(self):
+        wb = openpyxl.load_workbook(self.LDC_path)
+        SystemData_Sheet: Worksheet = wb['SystemData']
+        
+        last_value = None
+        for cell in SystemData_Sheet['G'][2:]:
+            if cell.value is None:
+                break
+            last_value = cell.value
+        
+        yim = last_value
+        
+        Fields = [{}]
+        for cell in SystemData_Sheet['G'][2:]:
+            if cell.value is None:
+                break
+            field = {}
+            field["Y_height"] = cell.value / yim
+            Fields.append(field)
+        
+        del Fields[0]
+        
+        return Fields
 
 class ParaxialRayTracing:
     def __init__(self, lens_data):
@@ -215,12 +239,13 @@ class ParaxialRayTracing:
         return v_fir
 
 class FiniteRayTracing:
-    def __init__(self, lens_data, v_fio, wavelength):
+    def __init__(self, lens_data, v_fio, wavelength, fields = None):
         self.lens_data = lens_data['rdn']
         self.v_fio = v_fio
         self.stop_surface = lens_data['stop']
         self.image_surface = lens_data['img']
         self.wavelength = wavelength
+        self.fields = fields
     
     def Raytracing(self, v_rsi, wavelength = None):
         if wavelength is None:
@@ -315,7 +340,7 @@ class FiniteRayTracing:
             
         return vtc, alpha, beta, gamma
 
-    def Newton_Rapson(self, target_surface, target, vtc, object_y, wavelength = None):
+    def Newton_Rapson(self, target_surface, target, vtc, object_y, wavelength = None, XY = "Y"):
             
         if wavelength is None:
             wavelength = self.wavelength
@@ -333,30 +358,34 @@ class FiniteRayTracing:
                 print(f"Newton Rapson Loop exceeded 20 iterations at surface{target_surface+1}, stopping Code.")
                 sys.exit()
             
-            f_xn1 = v_rsi[target_surface]['Y']
-            xn1 = v_rsi[0]['Y']
+            f_xn1 = v_rsi[target_surface][XY]
+            xn1 = v_rsi[0][XY]
 
-            vtc['L'] = 0
-            vtc['M'] = sin(arctan((v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y) / self.lens_data[0]['Thickness']))
+            V = sqrt(v_rsi[0]['X']**2 + (v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y)**2 + self.lens_data[0]['Thickness']**2)
+            vtc['L'] = v_rsi[0]['X'] / V
+            vtc['M'] = (v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y) / V
             vtc['N'] = sqrt(1 - vtc['L'] ** 2 - vtc['M'] ** 2)
             
-            vtc['Y'] = v_rsi[0]['Y'] - delta_M
+            vtc[XY] = v_rsi[0][XY] - delta_M
             
             v_rsi = [vtc]
             self.Raytracing(v_rsi, wavelength)
             
-            f_xn2 = v_rsi[target_surface]['Y']
+            f_xn2 = v_rsi[target_surface][XY]
             f_prime_x = (f_xn1 - f_xn2) / delta_M
             xn2 = xn1 + (target - f_xn1) / f_prime_x
             
-            vtc['Y'] = xn2
-            vtc['M'] = sin(arctan((vtc['Y'] - self.v_fio[0]['hcy'] * object_y) / self.lens_data[0]['Thickness']))
+            vtc[XY] = xn2
+            
+            V = sqrt(v_rsi[0]['X']**2 + (v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y)**2 + self.lens_data[0]['Thickness']**2)
+            vtc['L'] = v_rsi[0]['X'] / V
+            vtc['M'] = (v_rsi[0]['Y'] - self.v_fio[0]['hcy'] * object_y) / V
             vtc['N'] = sqrt(1 - vtc['L'] ** 2 - vtc['M'] ** 2)
             
             v_rsi = [vtc]
             self.Raytracing(v_rsi, wavelength)
 
-            if target + 0.00000000000001 >= v_rsi[target_surface]['Y'] >= target - 0.00000000000001:
+            if target + 0.00000000000001 >= v_rsi[target_surface][XY] >= target - 0.00000000000001:
                 return vtc
     
     def rsi(self, stp_x, stp_y, ojt_x, ojt_y, wavelength = None):
@@ -364,8 +393,33 @@ class FiniteRayTracing:
             wavelength = self.wavelength
         
         def initial_value(wavelength, stp_x, stp_y, ojt_x, ojt_y):
-            vtc = {}
-            if ojt_x == 0 and ojt_y == 0:
+            
+            if (ojt_x == "r") or (ojt_x == "R"):
+                y = self.fields[stp_y-1]["Y_height"]
+                if ojt_y == 1:
+                    vtc = initial_value(wavelength, 0, 0, 0, y)
+                elif ojt_y == 2:
+                    vtc = initial_value(wavelength, 0, 1-self.Vignetting_factors[stp_y-1]["vuy"], 0, y)
+                elif ojt_y == 3:
+                    vtc = initial_value(wavelength, 0, -1+self.Vignetting_factors[stp_y-1]["vly"], 0, y)
+                elif ojt_y == 4:
+                    vtc = initial_value(wavelength, 1 -self.Vignetting_factors[stp_y-1]["vux"], 0, 0,y)
+                elif ojt_y == 5:
+                    vtc = initial_value(wavelength, -1+self.Vignetting_factors[stp_y-1]["vlx"], 0, 0, y)
+            elif (stp_x == "r") or (stp_x == "R"):
+                y = self.fields[ojt_y-1]["Y_height"]
+                if stp_y == 1:
+                    vtc = initial_value(wavelength, 0, 0, 0, y)
+                elif stp_y == 2:
+                    vtc = initial_value(wavelength, 0,  1-self.Vignetting_factors[ojt_y-1]["vuy"], 0, y)
+                elif stp_y == 3:
+                    vtc = initial_value(wavelength, 0, -1+self.Vignetting_factors[ojt_y-1]["vly"], 0, y)
+                elif stp_y == 4:
+                    vtc = initial_value(wavelength, 1-self.Vignetting_factors[ojt_y-1]["vux"], 0, 0, y)
+                elif stp_y == 5:
+                    vtc = initial_value(wavelength, -1+self.Vignetting_factors[ojt_y-1]["vlx"], 0, 0, y)   
+            elif ojt_x == 0 and ojt_y == 0:
+                vtc = {}
                 vtc['L'] = sin(arctan(self.v_fio[0]['umy'])) * stp_x
                 vtc['M'] = sin(arctan(self.v_fio[0]['umy'])) * stp_y
                 vtc['N'] = sqrt(1 - vtc['L']**2 - vtc['M']**2)
@@ -373,6 +427,7 @@ class FiniteRayTracing:
                 vtc['Y'] = self.v_fio[1]['hmy'] * stp_y
                 vtc['Z'] = 0
             else:
+                vtc = {}
                 vtc['L'] = 0
                 vtc['M'] = sin(arctan(self.v_fio[0]['ucy'] * ojt_y)) 
                 vtc['N'] = sqrt(1 - vtc['M']**2)
@@ -409,6 +464,66 @@ class FiniteRayTracing:
         map = []
         map = [abs(up_ray[cs]['Y']) if abs(up_ray[cs]['Y']) >= abs(dw_ray[cs]['Y']) else abs(dw_ray[cs]['Y']) for cs in range(self.image_surface + 1)]
         return map
+    
+    def setvig(self, map):
+        
+        def OneByOnersi(v_rsi, map, ojt, sine):
+            for current_surface in range(self.image_surface + 1):
+                if abs(v_rsi[current_surface]["Y"]) >= map[current_surface] + 0.00001:
+                    vtc = v_rsi[0]
+                    vtc = self.Newton_Rapson(current_surface, sine * map[current_surface], vtc, ojt)
+                    v_rsi = [vtc]
+                    v_rsi = self.Raytracing(v_rsi)
+                    break
+            return v_rsi
+
+        vig_fact = []
+        
+        for current_field in range(len(self.fields)):
+            vigfac = {}
+            for ep_num in [2, 3, 4, 5]:
+                if ep_num == 2:
+                    v_rsi = self.rsi(0, 1, 0, self.fields[current_field]["Y_height"])
+                    y_1 = v_rsi[0]["Y"]
+                    vtc = v_rsi[0]
+                    vtc = self.Newton_Rapson(self.stop_surface, map[self.stop_surface], vtc, self.fields[current_field]["Y_height"])
+                    v_rsi = [vtc]
+                    v_rsi = self.Raytracing(v_rsi)
+                    v_rsi = OneByOnersi(v_rsi, map, self.fields[current_field]["Y_height"], 1)
+                    y_2 = v_rsi[0]["Y"]
+                    vigfac["vuy"] = (y_1 - y_2) / self.v_fio[1]["hmy"]
+                elif ep_num == 3:
+                    v_rsi = self.rsi(0, -1, 0, self.fields[current_field]["Y_height"])
+                    y_1 = v_rsi[0]["Y"]
+                    vtc = v_rsi[0]
+                    vtc = self.Newton_Rapson(self.stop_surface, -map[self.stop_surface], vtc, self.fields[current_field]["Y_height"])
+                    v_rsi = [vtc]
+                    v_rsi = self.Raytracing(v_rsi)
+                    v_rsi = OneByOnersi(v_rsi, map, self.fields[current_field]["Y_height"], -1)
+                    y_2 = v_rsi[0]["Y"]
+                    vigfac["vly"] = -(y_1 - y_2) / self.v_fio[1]["hmy"]
+                elif ep_num == 4:
+                    v_rsi = self.rsi(1, 0, 0, self.fields[current_field]["Y_height"])
+                    y_1 = v_rsi[0]["X"]
+                    vtc = v_rsi[0]
+                    vtc = self.Newton_Rapson(self.stop_surface, map[self.stop_surface], vtc, self.fields[current_field]["Y_height"], XY = "X")
+                    v_rsi = [vtc]
+                    v_rsi = self.Raytracing(v_rsi)
+                    v_rsi = OneByOnersi(v_rsi, map, self.fields[current_field]["Y_height"], 1)
+                    y_2 = v_rsi[0]["X"]
+                    vigfac["vux"] = (y_1 - y_2) / self.v_fio[1]["hmy"]
+                elif ep_num == 5:
+                    v_rsi = self.rsi(-1, 0, 0, self.fields[current_field]["Y_height"])
+                    y_1 = v_rsi[0]["X"]
+                    vtc = v_rsi[0]
+                    vtc = self.Newton_Rapson(self.stop_surface, -map[self.stop_surface], vtc, self.fields[current_field]["Y_height"], XY = "X")
+                    v_rsi = [vtc]
+                    v_rsi = self.Raytracing(v_rsi)
+                    v_rsi = OneByOnersi(v_rsi, map, self.fields[current_field]["Y_height"], -1)
+                    y_2 = v_rsi[0]["X"]
+                    vigfac["vlx"] = -(y_1 - y_2) / self.v_fio[1]["hmy"]
+            vig_fact.append(vigfac)
+        self.Vignetting_factors = vig_fact
 
 ldl = LensDataLoader(r'./LensDataCenter.xlsx')
 lens_data= ldl.load_rdn()
@@ -416,9 +531,19 @@ lens_data= ldl.load_rdn()
 prt = ParaxialRayTracing(lens_data)
 value_fio = prt.fio("e")
 value_fir = prt.fir(value_fio)
+fields = ldl.load_fields()
 
-frt = FiniteRayTracing(lens_data, value_fio, "e")
+frt = FiniteRayTracing(lens_data, value_fio, "e", fields)
+
 map = frt.Y_SemiAperture()
+frt.setvig(map)
 
-for m in map:
-    print(m)
+# for a in frt.Vignetting_factors:
+#     print(a)
+
+# for a in frt.fields:
+#     print(a)
+
+v_rsi = frt.rsi("r", 3, "f", 4)
+for a in v_rsi:
+    print(a)
