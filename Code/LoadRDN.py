@@ -246,7 +246,7 @@ class FiniteRayTracing:
         self.image_surface = lens_data['img']
         self.wavelength = wavelength
         self.fields = fields
-        self.map = self.Y_SemiAperture()
+        self.map = self.init_map()
     
     def Raytracing(self, v_rsi, wavelength = None):
         if wavelength is None:
@@ -455,7 +455,7 @@ class FiniteRayTracing:
         
         return v_rsi
     
-    def Y_SemiAperture(self):
+    def init_map(self):
         v_rsi = self.rsi(0, 1 ,0 ,0)
         up_ray = self.rsi(0, 1, 0, 1)
         vtc = up_ray[0]
@@ -533,6 +533,16 @@ class FiniteRayTracing:
                     vigfac["vlx"] = -(y_1 - y_2) / self.v_fio[1]["hmy"]
             vig_fact.append(vigfac)
         self.Vignetting_factors = vig_fact
+        
+        if Change:
+            newmap = [0 for _ in range(self.image_surface + 1)]
+            for current_field in range(len(self.fields)):
+                for ep in [1, 2, 3, 4, 5]:
+                    v_rsi = self.rsi("r", ep, "f", current_field+1)
+                    for current_surface in range(self.image_surface + 1):
+                        if abs(v_rsi[current_surface]["Y"]) > newmap[current_surface]:
+                            newmap[current_surface] = abs(v_rsi[current_surface]["Y"])
+            self.map = newmap
 
 ldl = LensDataLoader(r'./LensDataCenter.xlsx')
 lens_data= ldl.load_rdn()
@@ -548,12 +558,12 @@ frt.map[10] = 5.5
 frt.setvig(Change = True)
 
 
-for a in frt.Vignetting_factors:
-    print(a)
+# for a in frt.Vignetting_factors:
+    # print(a)
 
 # v_rsi = frt.rsi("r", 3, "f", 4)
 # for a in v_rsi:
 #     print(a)
 
-# for a in frt.map:
-#     print(a)
+for a in frt.map:
+    print(a)
