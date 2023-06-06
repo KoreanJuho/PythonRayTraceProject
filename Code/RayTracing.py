@@ -1,7 +1,7 @@
 import openpyxl
 from openpyxl.utils import get_column_letter
-from typing import List, Dict, Optional, Union
 from openpyxl.worksheet.worksheet import Worksheet
+from typing import List, Dict
 from numpy import sin, tan, arcsin, arctan, sqrt, sign
 import sys
 
@@ -12,7 +12,6 @@ class LensDataLoader:
         self.Index_priority = ["CDGM", "HOYA", "SCHOTT", "HIKARI", "SUMITA", "OHARA"]
         
     def load_rdn(self):
-        
         def load_aspheric_coefficients(SurfaceProperty_Sheet: Worksheet, surface_number: int) -> Dict[str, float]:
             # Scan first row of SurfaceProperty sheet to find column with this surface number
             for col in range(2, SurfaceProperty_Sheet.max_column + 1):
@@ -228,8 +227,8 @@ class ParaxialRayTracing:
     def fir(self, v_fio):
         v_fir = {}
         
-        v_fir['EFL'] = v_fio[0]['hmy'] / v_fio[self.image_surface-1]['hcy']
-        v_fir['BFL'] = v_fio[self.image_surface-1]['hmy'] / v_fio[self.image_surface-1]['hcy']
+        v_fir['EFL'] = -v_fio[1]['hmy'] / v_fio[self.image_surface-1]['umy']
+        v_fir['BFL'] = -v_fio[self.image_surface-1]['hmy'] / v_fio[self.image_surface-1]['umy']
         
         v_fir['ENP'] = - v_fio[1]['hcy'] / v_fio[0]['ucy']
         v_fir['EPD'] = 2 * (v_fio[1]['hmy'] + v_fir['ENP'] * v_fio[0]['umy'])
@@ -543,27 +542,3 @@ class FiniteRayTracing:
                         if abs(v_rsi[current_surface]["Y"]) > newmap[current_surface]:
                             newmap[current_surface] = abs(v_rsi[current_surface]["Y"])
             self.map = newmap
-
-ldl = LensDataLoader(r'./LensDataCenter.xlsx')
-lens_data= ldl.load_rdn()
-fields = ldl.load_fields()
-
-prt = ParaxialRayTracing(lens_data)
-value_fio = prt.fio("e")
-value_fir = prt.fir(value_fio)
-
-frt = FiniteRayTracing(lens_data, value_fio, "e", fields)
-
-frt.map[10] = 5.5
-frt.setvig(Change = True)
-
-
-# for a in frt.Vignetting_factors:
-    # print(a)
-
-# v_rsi = frt.rsi("r", 3, "f", 4)
-# for a in v_rsi:
-#     print(a)
-
-for a in frt.map:
-    print(a)
