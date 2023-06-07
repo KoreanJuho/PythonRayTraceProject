@@ -1,5 +1,5 @@
 import RayTracing as rt
-import math
+from math import ceil
 import matplotlib.pyplot as plt
 
 class Diagnostics:
@@ -63,50 +63,77 @@ class Diagnostics:
         def plot_all(v_lsa, v_fie):
             plt.figure(figsize=(9, 6))
 
-            def round_up_to_nearest_05(number):
-                return math.ceil(number / 0.005) * 0.005
+            def round_up_to_nearest_05(number, up):
+                return ceil(number / up) * up
 
-            vmax= round_up_to_nearest_05(max(max(v_lsa[key]) for key in ["C", "d", "e", "F", "g"]))
-            
             # LSA Graph
             plt.subplot(1, 3, 1)  # First subplot in a grid of 1x3
             for wavelength in ["C", "d", "e", "F", "g"]:
-                plt.plot(v_lsa[wavelength], v_lsa["Relative_Pupil_Height"], label=f'{wavelength} line')
+                plt.plot(v_lsa[wavelength], v_lsa["Relative_Pupil_Height"], label=wavelength)
             plt.xlabel('FOCUS (MILLIMETERS)')
-            plt.title('LONGITUDINAL SPHERICAL ABER.')
+            plt.title('LONGITUDINAL\nSPHERICAL ABER.', pad=20, fontsize='large')
+            vmax= round_up_to_nearest_05(max(max(abs(val) for val in v_lsa[key]) for key in ["C", "d", "e", "F", "g"]), 0.05)
             plt.xlim([-vmax, vmax])
+            plt.ylim([0, 1])
             plt.xticks([-vmax, -vmax/2, 0, vmax/2, vmax])
             plt.yticks([0.25, 0.5, 0.75, 1])
             ax = plt.gca()  # get current axis
             ax.spines['left'].set_position('zero')
             ax.spines['bottom'].set_position('zero')
-
-            # Hide the right and top spines
-            ax.spines['right'].set_visible(False)
+            ax.spines['right'].set_visible(False) # Hide the right and top spines
             ax.spines['top'].set_visible(False)
-
-            # Only show ticks on the left and bottom spines
-            ax.yaxis.tick_left()
+            ax.yaxis.tick_left() # Only show ticks on the left and bottom spines
             ax.xaxis.tick_bottom()
-            plt.legend()
+            plt.tick_params(axis = 'both', labelsize = 'x-small')
+            plt.legend(fontsize='x-small')
 
-            # Fie Graph 1
+            # Fie Graph
             plt.subplot(1, 3, 2)  # Second subplot in a grid of 1x3
-            plt.plot(v_fie["Yfo"], v_fie["Image_Height"], label='Yfo')
-            plt.plot(v_fie["Xfo"], v_fie["Image_Height"], label='Xfo')
-            plt.xlabel('Image Height')
-            plt.ylabel('Yfo / Xfo')
-            plt.title('Yfo and Xfo vs Image Height')
-            plt.legend()
+            plt.plot(v_fie["Xfo"], v_fie["Image_Height"], label='Xfo', linestyle='-', color='teal')
+            plt.plot(v_fie["Yfo"], v_fie["Image_Height"], label='Yfo', linestyle='--', color='teal')
+            plt.xlabel('FOCUS (MILLIMETERS)')
+            plt.title('ASTIGMATIC\nFIELD CURVES', pad=20, fontsize='large')
+            vmax= round_up_to_nearest_05(max(max(abs(val) for val in v_fie[key]) for key in ["Xfo", "Yfo"]),0.1)
+            plt.xlim([-vmax, vmax])
+            y = v_fie["Image_Height"][50]
+            plt.ylim([0, y])
+            plt.xticks([-vmax, -vmax/2, 0, vmax/2, vmax])
+            plt.yticks([y*0.25, y*0.5, y*0.75, y*1])
+            ax = plt.gca()  # get current axis
+            ax.spines['left'].set_position('zero')
+            ax.spines['bottom'].set_position('zero')
+            ax.spines['right'].set_visible(False) # Hide the right and top spines
+            ax.spines['top'].set_visible(False)
+            ax.yaxis.tick_left() # Only show ticks on the left and bottom spines
+            ax.xaxis.tick_bottom()
+            ax.set_ylabel('IMG HT', rotation=0, fontsize = 9)
+            ax.yaxis.set_label_coords(0.6,1.002)
+            plt.tick_params(axis = 'both', labelsize = 'x-small')
+            plt.legend(fontsize='x-small')
 
-            # Fie Graph 2
+            # Distortion Graph
             plt.subplot(1, 3, 3)  # Third subplot in a grid of 1x3
-            plt.plot(v_fie["Distortion"], v_fie["Image_Height"])
-            plt.xlabel('Image Height')
-            plt.ylabel('Distortion')
-            plt.title('Distortion vs Image Height')
+            plt.plot(v_fie["Distortion"], v_fie["Image_Height"], color='teal')
+            plt.xlabel('% DISTORTION')
+            plt.title('DISTORTION', pad=30, fontsize='large')
+            vmax= round_up_to_nearest_05(max(abs(val) for val in v_fie["Distortion"]),1)
+            plt.xlim([-vmax, vmax])
+            y = v_fie["Image_Height"][50]
+            plt.ylim([0, y])
+            plt.xticks([-vmax, -vmax/2, 0, vmax/2, vmax])
+            plt.yticks([y*0.25, y*0.5, y*0.75, y*1])
+            ax = plt.gca()  # get current axis
+            ax.spines['left'].set_position('zero')
+            ax.spines['bottom'].set_position('zero')
+            ax.spines['right'].set_visible(False) # Hide the right and top spines
+            ax.spines['top'].set_visible(False)
+            ax.yaxis.tick_left() # Only show ticks on the left and bottom spines
+            ax.xaxis.tick_bottom()
+            ax.set_ylabel('IMG HT', rotation=0, fontsize = 9)
+            ax.yaxis.set_label_coords(0.6,1.002)
+            plt.tick_params(axis = 'both', labelsize = 'x-small')
 
-            plt.tight_layout()  # Adjust spacing between subplots to minimize overlap
+            # plt.tight_layout()  # Adjust spacing between subplots to minimize overlap
             plt.show()
         
         v_lsa = lsa()
