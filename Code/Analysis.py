@@ -1,6 +1,7 @@
 import RayTracing as rt
 from math import ceil
 import matplotlib.pyplot as plt
+from numpy import sqrt
 
 class Diagnostics:
     def __init__(self, central_wavelength):
@@ -13,9 +14,9 @@ class Diagnostics:
         self.frt = rt.FiniteRayTracing(self.lens_data, self.value_fio, central_wavelength, self.fields)
         self.frt.setvig()
         self.central_wavelength = central_wavelength
-        self.wavelength = list(self.lens_data["rdn"][1]["RefractiveIndex"].keys())
+        self.wavelengths = list(self.lens_data["rdn"][1]["RefractiveIndex"].keys())
         
-    def fielsa(self):
+    def fielsago(self):
         def lsa():
             v_lsa = {
                 "C": [0]*51,
@@ -25,7 +26,7 @@ class Diagnostics:
                 "g": [0]*51,
                 "Relative_Pupil_Height": [0]*51 }
 
-            for wavelength in self.wavelength:
+            for wavelength in self.wavelengths:
                 if wavelength != "e":
                     system_matrix = self.prt.calculate_system_matrix(1, self.lens_data["img"]-1, wavelength)
                     v_lsa[wavelength][0] = system_matrix["A"] / system_matrix["C"] - self.value_fir["BFL"]
@@ -140,6 +141,82 @@ class Diagnostics:
         v_fie = fie(self.central_wavelength)
         plot_all(v_lsa, v_fie)
         
-ad = Diagnostics("e")
+    def rimgo(self):
+        
+        def speedrsi(stp_x, stp_y, ojt_x, ojt_y, y0, wavelength = None):
+            v_rsi = []
+            vtc = {}
+            vtc['X'] = self.value_fio[1]['hmy'] * stp_x
+            vtc['Y'] = y0 + self.value_fio[1]['hmy'] * stp_y
+            vtc['Z'] = 0
+            vtc['L'] = vtc['X'] / sqrt(vtc['X']**2 + (vtc['Y'] - self.value_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data["rdn"][0]['Thickness'])
+            vtc['M'] = (vtc['Y'] - self.value_fio[0]['hcy'] * ojt_y) / sqrt(vtc['X'] ** 2 + (vtc['Y'] - self.value_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data["rdn"][0]['Thickness']**2)
+            vtc['N'] = sqrt(1 - vtc['L']**2 - vtc['M']**2)
+            v_rsi.append(vtc)
+            v_rsi = self.frt.Raytracing(v_rsi, wavelength)
+            return v_rsi
+        
+        def clacrf():
+            rayfan = []
+            for current_field in range(len(self.fields)):
+                vuy, vly = self.frt.Vignetting_factors[current_field]["vuy"], self.frt.Vignetting_factors[current_field]["vly"]
+                interval = (2 - vuy - vly) / 100
+                Relative_Pupil_Height = [-1 + vly] + [-1 + vly + interval*i for i in range(1, 101)]
+                vux = self.frt.Vignetting_factors[current_field]["vux"]
+                interval = (1-vux)/50
+                xRelative_Pupil_Height = [0] + [interval*i for i in range(1, 51)]
+                
+                c_rsi = self.frt.rsi(0, 0, 0, self.fields[current_field]["Y_height"], wavelength = self.central_wavelength)
+                central_y = c_rsi[self.lens_data["img"]]["Y"]
+                central_x = c_rsi[self.lens_data["img"]]["X"]
+                
+                rf = {}
+                trf = {}
+                srf = {}
+                for wavelength in self.wavelengths:
+                    v_rsi = self.frt.rsi(0, 0, 0, self.fields[current_field]["Y_height"], wavelength)
+                    y0 = v_rsi[0]["Y"]
+                    rf1 = []
+                    for current_pupil in Relative_Pupil_Height:
+                        a_rsi = speedrsi(0, current_pupil, 0, self.fields[current_field]["Y_height"], y0, wavelength)
+                        rf1.append(a_rsi[self.lens_data["img"]]["Y"] - central_y)
+                    trf[wavelength] = rf1
+                    rf["tan"] = trf
+                    rf2 = []
+                    for current_pupil in xRelative_Pupil_Height:
+                        a_rsi = speedrsi(current_pupil, 0, 0, self.fields[current_field]["Y_height"], y0, wavelength)
+                        rf2.append(a_rsi[self.lens_data["img"]]["X"] - central_x)
+                    srf[wavelength] = rf2
+                    rf["sagi"] = srf
+                rayfan.append(rf)
+            return rayfan, Relative_Pupil_Height, xRelative_Pupil_Height
 
-ad.fielsa()
+        def plot(rayfan, Relative_Pupil_Height, xRelative_Pupil_Height):
+            
+            filen = len(self.fields)
+            fig, axes = plt.subplots(nrows=filen, ncols=2, figsize=(6, 7), gridspec_kw={'width_ratios': [2, 1]})
+            
+            def plot_sub(ax, rh, st, fld):
+                for wavelength in self.wavelengths:
+                    ax.plot(rh, rayfan[fld - 1][st][wavelength], label=wavelength, linewidth=1)
+                ax.spines['left'].set_position('zero')
+                ax.spines['bottom'].set_position('zero')
+                ax.spines['right'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+                ax.set_xticks([])
+                ax.set_yticks([-0.025, 0.025])
+                ax.tick_params(axis='both', labelsize='x-small')
+            
+            for curfld in range(filen):
+                plot_sub(axes[curfld, 0], Relative_Pupil_Height, "tan", filen - curfld)
+                plot_sub(axes[curfld, 1], xRelative_Pupil_Height, "sagi", filen - curfld)
+            
+            plt.tight_layout()
+            plt.show()
+        
+        rayfan, Relative_Pupil_Height, xRelative_Pupil_Height = clacrf()
+        plot(rayfan, Relative_Pupil_Height, xRelative_Pupil_Height)
+        
+ad = Diagnostics("e")
+# ad.fielsago()
+ad.rimgo()
