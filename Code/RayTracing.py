@@ -470,6 +470,19 @@ class FiniteRayTracing:
         map = [abs(up_ray[cs]['Y']) if abs(up_ray[cs]['Y']) >= abs(dw_ray[cs]['Y']) else abs(dw_ray[cs]['Y']) for cs in range(self.image_surface + 1)]
         return map
     
+    def speedrsi(self, stp_x, stp_y, ojt_x, ojt_y, y0, wavelength = None):
+        v_rsi = []
+        vtc = {}
+        vtc['X'] = self.v_fio[1]['hmy'] * stp_x
+        vtc['Y'] = y0 + self.v_fio[1]['hmy'] * stp_y
+        vtc['Z'] = 0
+        vtc['L'] = vtc['X'] / sqrt(vtc['X']**2 + (vtc['Y'] - self.v_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data[0]['Thickness'])
+        vtc['M'] = (vtc['Y'] - self.v_fio[0]['hcy'] * ojt_y) / sqrt(vtc['X'] ** 2 + (vtc['Y'] - self.v_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data[0]['Thickness']**2)
+        vtc['N'] = sqrt(1 - vtc['L']**2 - vtc['M']**2)
+        v_rsi.append(vtc)
+        v_rsi = self.Raytracing(v_rsi, wavelength)
+        return v_rsi
+    
     def setvig(self, Change = False):
         
         def OneByOnersi(v_rsi, ojt, sine, XY):

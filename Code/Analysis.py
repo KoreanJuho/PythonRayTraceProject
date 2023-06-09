@@ -1,7 +1,8 @@
 import RayTracing as rt
 from math import ceil
 import matplotlib.pyplot as plt
-from numpy import sqrt
+from numpy import sqrt, sin, cos
+from math import pi
 
 class Diagnostics:
     def __init__(self, central_wavelength):
@@ -69,11 +70,12 @@ class Diagnostics:
 
             # LSA Graph
             plt.subplot(1, 3, 1)  # First subplot in a grid of 1x3
-            for wavelength in ["C", "d", "e", "F", "g"]:
-                plt.plot(v_lsa[wavelength], v_lsa["Relative_Pupil_Height"], label=wavelength)
+            color_list = ['red', 'gold', 'green', 'blue', 'mediumvioletred']
+            for i, wavelength in enumerate(self.wavelengths):
+                plt.plot(v_lsa[wavelength], v_lsa["Relative_Pupil_Height"], label=wavelength, color = color_list[i])
             plt.xlabel('FOCUS (MILLIMETERS)')
             plt.title('LONGITUDINAL\nSPHERICAL ABER.', pad=20, fontsize='large')
-            vmax= round_up_to_nearest_05(max(max(abs(val) for val in v_lsa[key]) for key in ["C", "d", "e", "F", "g"]), 0.05)
+            vmax= round_up_to_nearest_05(max(max(abs(val) for val in v_lsa[key]) for key in self.wavelengths), 0.05)
             plt.xlim([-vmax, vmax])
             plt.ylim([0, 1])
             plt.xticks([-vmax, -vmax/2, 0, vmax/2, vmax])
@@ -90,8 +92,8 @@ class Diagnostics:
 
             # Fie Graph
             plt.subplot(1, 3, 2)  # Second subplot in a grid of 1x3
-            plt.plot(v_fie["Xfo"], v_fie["Image_Height"], label='Xfo', linestyle='-', color='teal')
-            plt.plot(v_fie["Yfo"], v_fie["Image_Height"], label='Yfo', linestyle='--', color='teal')
+            plt.plot(v_fie["Xfo"], v_fie["Image_Height"], label='Xfo', linestyle='-', color='green')
+            plt.plot(v_fie["Yfo"], v_fie["Image_Height"], label='Yfo', linestyle='--', color='green')
             plt.xlabel('FOCUS (MILLIMETERS)')
             plt.title('ASTIGMATIC\nFIELD CURVES', pad=20, fontsize='large')
             vmax= round_up_to_nearest_05(max(max(abs(val) for val in v_fie[key]) for key in ["Xfo", "Yfo"]),0.1)
@@ -114,7 +116,7 @@ class Diagnostics:
 
             # Distortion Graph
             plt.subplot(1, 3, 3)  # Third subplot in a grid of 1x3
-            plt.plot(v_fie["Distortion"], v_fie["Image_Height"], color='teal')
+            plt.plot(v_fie["Distortion"], v_fie["Image_Height"], color='green')
             plt.xlabel('% DISTORTION')
             plt.title('DISTORTION', pad=30, fontsize='large')
             vmax= round_up_to_nearest_05(max(abs(val) for val in v_fie["Distortion"]),1)
@@ -142,20 +144,6 @@ class Diagnostics:
         plot_all(v_lsa, v_fie)
         
     def rimgo(self):
-        
-        def speedrsi(stp_x, stp_y, ojt_x, ojt_y, y0, wavelength = None):
-            v_rsi = []
-            vtc = {}
-            vtc['X'] = self.value_fio[1]['hmy'] * stp_x
-            vtc['Y'] = y0 + self.value_fio[1]['hmy'] * stp_y
-            vtc['Z'] = 0
-            vtc['L'] = vtc['X'] / sqrt(vtc['X']**2 + (vtc['Y'] - self.value_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data["rdn"][0]['Thickness'])
-            vtc['M'] = (vtc['Y'] - self.value_fio[0]['hcy'] * ojt_y) / sqrt(vtc['X'] ** 2 + (vtc['Y'] - self.value_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data["rdn"][0]['Thickness']**2)
-            vtc['N'] = sqrt(1 - vtc['L']**2 - vtc['M']**2)
-            v_rsi.append(vtc)
-            v_rsi = self.frt.Raytracing(v_rsi, wavelength)
-            return v_rsi
-        
         def clacrf():
             rayfan = []
             for current_field in range(len(self.fields)):
@@ -178,13 +166,13 @@ class Diagnostics:
                     y0 = v_rsi[0]["Y"]
                     rf1 = []
                     for current_pupil in Relative_Pupil_Height:
-                        a_rsi = speedrsi(0, current_pupil, 0, self.fields[current_field]["Y_height"], y0, wavelength)
+                        a_rsi = self.frt.speedrsi(0, current_pupil, 0, self.fields[current_field]["Y_height"], y0, wavelength)
                         rf1.append(a_rsi[self.lens_data["img"]]["Y"] - central_y)
                     trf[wavelength] = rf1
                     rf["tan"] = trf
                     rf2 = []
                     for current_pupil in xRelative_Pupil_Height:
-                        a_rsi = speedrsi(current_pupil, 0, 0, self.fields[current_field]["Y_height"], y0, wavelength)
+                        a_rsi = self.frt.speedrsi(current_pupil, 0, 0, self.fields[current_field]["Y_height"], y0, wavelength)
                         rf2.append(a_rsi[self.lens_data["img"]]["X"] - central_x)
                     srf[wavelength] = rf2
                     rf["sagi"] = srf
@@ -196,9 +184,10 @@ class Diagnostics:
             filen = len(self.fields)
             fig, axes = plt.subplots(nrows=filen, ncols=2, figsize=(6, 7), gridspec_kw={'width_ratios': [2, 1]})
             
+            color_list = ['red', 'gold', 'green', 'blue', 'mediumvioletred']
             def plot_sub(ax, rh, st, fld):
-                for wavelength in self.wavelengths:
-                    ax.plot(rh, rayfan[fld - 1][st][wavelength], label=wavelength, linewidth=1)
+                for i, wavelength in enumerate(self.wavelengths):
+                    ax.plot(rh, rayfan[fld - 1][st][wavelength], label=wavelength, linewidth=1, color=color_list[i])
                 ax.spines['left'].set_position('zero')
                 ax.spines['bottom'].set_position('zero')
                 ax.spines['right'].set_visible(False)
@@ -217,6 +206,188 @@ class Diagnostics:
         rayfan, Relative_Pupil_Height, xRelative_Pupil_Height = clacrf()
         plot(rayfan, Relative_Pupil_Height, xRelative_Pupil_Height)
         
-ad = Diagnostics("e")
-# ad.fielsago()
-ad.rimgo()
+    def SpotDiagram(self):
+        def make_xy_ellipse(current_field):
+            x = [0]
+            vuy, vly = self.frt.Vignetting_factors[current_field]["vuy"], self.frt.Vignetting_factors[current_field]["vly"]
+            vux = self.frt.Vignetting_factors[current_field]["vux"]
+            y = [-1 * (vuy + vly) / 2]
+            
+            b = (2 - vuy - vly) / 2
+            a = sqrt((1 - vux) ** 2 / (1 - (y[0] ** 2) / (b ** 2)))
+            
+            index = 1
+            for radius in range(1, 11):
+                for angle in range(0, 360, 10):
+                    x.append(a * radius / 10 * cos(angle * 10 * pi / 180))
+                    y.append(b * radius / 10 * sin(angle * 10 * pi / 180))
+                    index += 1
+            xy = {"x": x, "y": y}
+            return xy
+
+        def make_spot(current_field, xy):
+            wxy = {}
+            for wavelength in self.wavelengths:
+                v_rsi = self.frt.rsi(0, 0, 0, self.fields[current_field]["Y_height"], wavelength)
+                y0 = v_rsi[0]["Y"]
+                mxy = {}
+                x, y = [], []
+                for index, value in enumerate(xy["x"]):
+                    v_rsi = self.frt.speedrsi(value, xy["y"][index], 0, self.fields[current_field]["Y_height"], y0, wavelength)
+                    
+                    x.append(v_rsi[self.frt.image_surface]["X"])
+                    y.append(v_rsi[self.frt.image_surface]["Y"])
+                mxy["x"] = x
+                mxy["y"] = y
+                wxy[wavelength] = mxy
+            return wxy
+        
+        def plot(spo):
+            def plot_sub(ax, spo, current_field):
+                for i, wavelength in enumerate(self.wavelengths):
+                    ax.scatter(spo[current_field][wavelength]["x"], spo[current_field][wavelength]["y"], label=wavelength, color=color_list[i], s=5)
+                ax.spines['left'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_aspect('equal')
+        
+            fig, axes = plt.subplots(nrows=len(self.fields), ncols=1, figsize=(6, 7))
+            color_list = ['red', 'gold', 'green', 'blue', 'mediumvioletred']
+            fldlen = len(self.fields)
+            for curfld in range(fldlen):
+                plot_sub(axes[curfld], spo, fldlen - curfld - 1)
+            
+            plt.tight_layout()
+            plt.show()
+        
+        spo = []
+        for current_field in range(len(self.fields)):
+            xy = make_xy_ellipse(current_field)
+            spo.append(make_spot(current_field, xy))
+        plot(spo)
+        
+    def Viego(self):
+        def Calc_Sag_Lens(current_surface, current_oal):
+            
+            def Calc_z(lens_height, current_surface):
+                r_square = lens_height ** 2
+                curvature = 1 / self.frt.lens_data[current_surface]["Y_radius"]
+                if self.frt.lens_data[current_surface]['Surface_type'] == "Sphere":
+                    k = 0
+                else:
+                    k = self.frt.lens_data[current_surface]["K"]
+                z_prime = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature ** 2 * r_square))
+                if self.frt.lens_data[current_surface]['Surface_type'] == "Asphere":
+                    time = 2
+                    for asp in self.frt.lens_data[current_surface]['Aspheric_coefficients'].values():
+                        z_prime += asp * r_square ** time
+                        time += 1
+                return z_prime
+            
+            lens_height = max(self.frt.map[current_surface], self.frt.map[current_surface+1])
+            step_size = 52
+            if self.frt.lens_data[current_surface+1]['RefractiveIndex'][self.central_wavelength] != 1:
+                lens_height = max(lens_height, self.frt.map[current_surface+1])
+            
+            if self.frt.lens_data[current_surface-1]['RefractiveIndex'][self.central_wavelength] != 1:
+                lens_height = max(lens_height, self.frt.map[current_surface-1])
+            
+            interval = 2 * lens_height / (step_size // 2 - 1)
+            
+            z = []
+            r = []
+            
+            for time in range(step_size // 2):
+                current_height = -lens_height + interval * time
+                if abs(current_height) <= self.frt.map[current_surface]:
+                    z_prime = Calc_z(current_height, current_surface)
+                elif time <= 7:
+                    z_prime = Calc_z(-self.frt.map[current_surface], current_surface)
+                else:
+                    z_prime = Calc_z(self.frt.map[current_surface], current_surface)
+                
+                z.append(current_oal + z_prime)
+                r.append(current_height)
+            
+            current_oal += self.frt.lens_data[current_surface]["Thickness"]
+            
+            for time in range(step_size // 2):
+                current_height = lens_height - interval * time
+                if abs(current_height) <= self.frt.map[current_surface + 1]:
+                    z_prime = Calc_z(current_height, current_surface + 1)
+                elif time <= 7:
+                    z_prime = Calc_z(self.frt.map[current_surface + 1], current_surface + 1)
+                else:
+                    z_prime = Calc_z(-self.frt.map[current_surface + 1],current_surface + 1)
+                
+                z.append(current_oal + z_prime)
+                r.append(current_height)
+            
+            z.append(z[0])
+            r.append(r[0])
+            
+            zr = {"z":z, "r":r}
+            
+            return zr
+        
+        def stp(current_surface, current_oal):
+            z = [current_oal, current_oal]
+            lr = [-self.frt.map[current_surface], -self.frt.map[current_surface]-1]
+            ur = [self.frt.map[current_surface], self.frt.map[current_surface]+1]
+            stp = {"z":z , "lr":lr, "ur": ur}
+            return stp
+
+        def img(current_oal):
+            z = [current_oal, current_oal]
+            r = [-self.frt.map[current_surface]-0.1,self.frt.map[current_surface]+0.1]
+            img = {"z":z, "r":r}
+            return img
+        
+        def rays(Full_oal):
+            rays = []
+            for current_field in range(1, len(self.frt.fields)+1):
+                for current_ep in range(1, 4):
+                    oal = 0
+                    z = []
+                    r = []
+                    if current_field != 1 or current_ep != 1:
+                        v_rsi = self.frt.rsi("f", current_field,"r", current_ep)
+                        ho = Full_oal / 10
+                        z = [-ho, v_rsi[1]["Z"]]
+                        r = [v_rsi[0]["Y"] - v_rsi[0]["M"] / v_rsi[0]["N"] * ho, v_rsi[1]["Y"]]
+                        for current_surface in range(2, self.frt.image_surface+1):
+                            z.append(oal + self.frt.lens_data[current_surface-1]["Thickness"] + v_rsi[current_surface]["Z"])
+                            r.append(v_rsi[current_surface]["Y"])
+                            oal = oal + self.frt.lens_data[current_surface-1]["Thickness"]
+                        ray = {"z": z, "r": r}
+                        rays.append(ray)
+            return rays
+        
+        zr = []
+        current_oal = 0
+        for current_surface in range(1, self.frt.image_surface):
+            if self.frt.lens_data[current_surface]['RefractiveIndex'][self.central_wavelength] != 1:
+                zr.append(Calc_Sag_Lens(current_surface, current_oal))
+            elif current_surface == self.frt.stop_surface:
+                stp = stp(current_surface, current_oal)
+            current_oal += self.frt.lens_data[current_surface]["Thickness"]
+        img = img(current_oal)
+        rays = rays(current_oal)
+                
+        for a in range(len(zr)):
+            plt.plot(zr[a]["z"], zr[a]["r"], color = "black", linewidth = 1)
+        plt.plot(stp["z"],stp["lr"], color = "black", linewidth = 1)
+        plt.plot(stp["z"],stp["ur"], color = "black", linewidth = 1)
+        plt.plot(img["z"],img["r"], color = "black", linewidth = 1)
+        colorlst = ["red", "green", "blue", "brown", "magenta"]
+        for i, ray in enumerate(rays):
+            plt.plot(ray["z"], ray["r"], color = colorlst[(i+1)//3], linewidth = 1)
+        
+        plt.axis('equal')
+        plt.xticks([])
+        plt.yticks([])
+        plt.tight_layout()
+        plt.show()
