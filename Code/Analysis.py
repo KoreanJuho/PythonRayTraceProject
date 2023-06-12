@@ -1,7 +1,7 @@
 import RayTracing as rt
 from math import ceil
 import matplotlib.pyplot as plt
-from numpy import sqrt, sin, cos
+from numpy import sqrt, sin, cos, linspace
 from math import pi
 
 class Diagnostics:
@@ -206,8 +206,8 @@ class Diagnostics:
         rayfan, Relative_Pupil_Height, xRelative_Pupil_Height = clacrf()
         plot(rayfan, Relative_Pupil_Height, xRelative_Pupil_Height)
         
-    def SpotDiagram(self):
-        def make_xy_ellipse(current_field):
+    def SpotDiagram(self, type = "ellipse", finish = None):
+        def ellipse(current_field, finish):
             x = [0]
             vuy, vly = self.frt.Vignetting_factors[current_field]["vuy"], self.frt.Vignetting_factors[current_field]["vly"]
             vux = self.frt.Vignetting_factors[current_field]["vux"]
@@ -217,15 +217,18 @@ class Diagnostics:
             a = sqrt((1 - vux) ** 2 / (1 - (y[0] ** 2) / (b ** 2)))
             
             index = 1
+            step = 30
             for radius in range(1, 11):
-                for angle in range(0, 360, 10):
-                    x.append(a * radius / 10 * cos(angle * 10 * pi / 180))
-                    y.append(b * radius / 10 * sin(angle * 10 * pi / 180))
+                if radius != 10:
+                    step -= 3
+                else:
+                    step = 1
+                for angle in range(0, 360, step):
+                    x.append(a * radius / 10 * cos(angle * step * pi / 180))
+                    y.append(b * radius / 10 * sin(angle * step * pi / 180))
                     index += 1
             xy = {"x": x, "y": y}
-            return xy
-
-        def make_spot(current_field, xy):
+            
             wxy = {}
             for wavelength in self.wavelengths:
                 v_rsi = self.frt.rsi(0, 0, 0, self.fields[current_field]["Y_height"], wavelength)
@@ -233,41 +236,96 @@ class Diagnostics:
                 mxy = {}
                 x, y = [], []
                 for index, value in enumerate(xy["x"]):
-                    v_rsi = self.frt.speedrsi(value, xy["y"][index], 0, self.fields[current_field]["Y_height"], y0, wavelength)
-                    
-                    x.append(v_rsi[self.frt.image_surface]["X"])
-                    y.append(v_rsi[self.frt.image_surface]["Y"])
+                    v_rsi = self.frt.speedrsi(value, xy["y"][index], 0, self.fields[current_field]["Y_height"], y0, wavelength=wavelength, finish = finish, discard = True)
+                    if v_rsi is not None:
+                        x.append(v_rsi[finish]["X"])
+                        y.append(v_rsi[finish]["Y"])
                 mxy["x"] = x
                 mxy["y"] = y
                 wxy[wavelength] = mxy
             return wxy
+
+        def square(current_field, finish):
+            grid = 20
+            vuy, vly = self.frt.Vignetting_factors[current_field]["vuy"], self.frt.Vignetting_factors[current_field]["vly"]
+            vux = self.frt.Vignetting_factors[current_field]["vux"]
+            x = linspace((-1+vux)*1.005, (1-vux)*1.005, grid)
+            y = linspace((-1+vly)*1.005, (1-vuy)*1.005, grid)
+            
+            wxy = {}
+            for wavelength in self.wavelengths:
+                v_rsi = self.frt.rsi(0, 0, 0, self.fields[current_field]["Y_height"], wavelength)
+                y0 = v_rsi[0]["Y"]
+                mxy = {}
+                spo_x, spo_y = [], []
+                for i in range(len(x)):
+                    for j in range(len(y)):
+                        finish = self.frt.image_surface
+                        v_rsi = self.frt.speedrsi(x[i], y[j], 0, self.fields[current_field]["Y_height"], y0, wavelength=wavelength, finish = finish, discard = True)
+                        if v_rsi is not None:
+                            spo_x.append(v_rsi[finish]["X"])
+                            spo_y.append(v_rsi[finish]["Y"])
+                mxy["x"] = spo_x
+                mxy["y"] = spo_y
+                wxy[wavelength] = mxy
+            return wxy
         
-        def plot(spo):
-            def plot_sub(ax, spo, current_field):
+        def spot_size(spo, finish):
+            spotsize = []
+            for current_field in range(len(self.fields)):
+                if current_field == 0:
+                    x0 = 0
+                    y0 = 0
+                else:
+                    c_rsi = self.frt.rsi(0,0,0,self.fields[current_field]["Y_height"])
+                    x0 = c_rsi[finish]["X"]
+                    y0 = c_rsi[finish]["Y"]
+                ss = []
+                for wavelength in self.frt.wavelength:
+                    for index in range(len(spo[current_field][wavelength]["x"])):
+                        x1 = spo[current_field][wavelength]["x"][index]
+                        y1 = spo[current_field][wavelength]["y"][index]
+                        ss.append(sqrt((x1-x0)**2+(y1-y0)**2))
+                avg = sum(ss)/len(ss)
+                spotsize.append(avg)
+            return spotsize
+   
+        def plot(spo,spotsize):
+            def plot_sub(ax, spo, current_field, spotsize):
                 for i, wavelength in enumerate(self.wavelengths):
-                    ax.scatter(spo[current_field][wavelength]["x"], spo[current_field][wavelength]["y"], label=wavelength, color=color_list[i], s=5)
+                    ax.scatter(spo[current_field][wavelength]["x"], spo[current_field][wavelength]["y"], label=wavelength, color=color_list[i], s=1)
                 ax.spines['left'].set_visible(False)
                 ax.spines['bottom'].set_visible(False)
                 ax.spines['right'].set_visible(False)
                 ax.spines['top'].set_visible(False)
                 ax.set_xticks([])
                 ax.set_yticks([])
+                ax.set_xlim([-0.08, 0.08])
                 ax.set_aspect('equal')
+                formatted_spotsize = format(spotsize[current_field], '.6f')
+                text = f"Field: {current_field}\nSpot size: {formatted_spotsize}"
+                ax.annotate(text, xy=(1, 0.5), xycoords='axes fraction', xytext=(5, 0), textcoords='offset points', ha='left', va='center')
         
             fig, axes = plt.subplots(nrows=len(self.fields), ncols=1, figsize=(6, 7))
             color_list = ['red', 'gold', 'green', 'blue', 'mediumvioletred']
             fldlen = len(self.fields)
             for curfld in range(fldlen):
-                plot_sub(axes[curfld], spo, fldlen - curfld - 1)
+                plot_sub(axes[curfld], spo, fldlen - curfld - 1, spotsize)
             
             plt.tight_layout()
             plt.show()
         
         spo = []
+        if finish is None:
+            finish = self.frt.image_surface
+        
         for current_field in range(len(self.fields)):
-            xy = make_xy_ellipse(current_field)
-            spo.append(make_spot(current_field, xy))
-        plot(spo)
+            if type == "ellipse":
+                spo.append(ellipse(current_field, finish))
+            else:
+                spo.append(square(current_field, finish))
+        spotsize = spot_size(spo,finish)
+        plot(spo,spotsize)
         
     def Viego(self):
         def Calc_Sag_Lens(current_surface, current_oal):

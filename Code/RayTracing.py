@@ -247,11 +247,13 @@ class FiniteRayTracing:
         self.fields = fields
         self.map = self.init_map()
     
-    def Raytracing(self, v_rsi, wavelength = None):
+    def Raytracing(self, v_rsi, wavelength = None, finish = None, discard = False):
         if wavelength is None:
             wavelength = self.wavelength
+        if finish is None:
+            finish = self.image_surface
         
-        for current_surface in range(self.image_surface):
+        for current_surface in range(finish):
             vtc = {}
             
             # Transfer Equation
@@ -292,6 +294,9 @@ class FiniteRayTracing:
             vtc['L'] = v_rsi[current_surface]['L'] + refractive_power * alpha
             vtc['M'] = v_rsi[current_surface]['M'] + refractive_power * beta
             vtc['N'] = v_rsi[current_surface]['N'] + refractive_power * gamma
+            
+            if discard and current_surface == self.stop_surface-1 and sqrt(vtc["X"]**2+vtc["Y"]**2) >= self.map[self.stop_surface]+0.0000000001:
+                return None
             
             v_rsi.append(vtc)
             
@@ -470,7 +475,7 @@ class FiniteRayTracing:
         map = [abs(up_ray[cs]['Y']) if abs(up_ray[cs]['Y']) >= abs(dw_ray[cs]['Y']) else abs(dw_ray[cs]['Y']) for cs in range(self.image_surface + 1)]
         return map
     
-    def speedrsi(self, stp_x, stp_y, ojt_x, ojt_y, y0, wavelength = None):
+    def speedrsi(self, stp_x, stp_y, ojt_x, ojt_y, y0, wavelength = None, finish=None, discard = False):
         v_rsi = []
         vtc = {}
         vtc['X'] = self.v_fio[1]['hmy'] * stp_x
@@ -480,7 +485,7 @@ class FiniteRayTracing:
         vtc['M'] = (vtc['Y'] - self.v_fio[0]['hcy'] * ojt_y) / sqrt(vtc['X'] ** 2 + (vtc['Y'] - self.v_fio[0]['hcy'] * ojt_y) ** 2 + self.lens_data[0]['Thickness']**2)
         vtc['N'] = sqrt(1 - vtc['L']**2 - vtc['M']**2)
         v_rsi.append(vtc)
-        v_rsi = self.Raytracing(v_rsi, wavelength)
+        v_rsi = self.Raytracing(v_rsi, wavelength, finish, discard)
         return v_rsi
     
     def setvig(self, Change = False):
