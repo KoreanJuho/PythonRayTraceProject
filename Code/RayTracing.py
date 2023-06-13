@@ -150,7 +150,7 @@ class ParaxialRayTracing:
     def calculate_system_matrix(self, start_surface: int, finish_surface: int, wavelength: str) -> Dict[str, float]:
         
         def calc_gaussian_bracket(gaussian_array: List[float], start: int, finish: int) -> float:
-            gaussian_bracket = [0] * (finish + 1)
+            gaussian_bracket = [1] * (finish + 1)
             for current_point in range(start, finish):
                 if current_point == start:
                     gaussian_bracket[current_point] = gaussian_array[start]

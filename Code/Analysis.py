@@ -206,7 +206,7 @@ class Diagnostics:
         rayfan, Relative_Pupil_Height, xRelative_Pupil_Height = clacrf()
         plot(rayfan, Relative_Pupil_Height, xRelative_Pupil_Height)
         
-    def SpotDiagram(self, type = "ellipse", finish = None):
+    def SpotDiagram(self, type = "ellipse", finish = None, graph = True):
         def ellipse(current_field, finish):
             x = [0]
             vuy, vly = self.frt.Vignetting_factors[current_field]["vuy"], self.frt.Vignetting_factors[current_field]["vly"]
@@ -300,7 +300,6 @@ class Diagnostics:
                 ax.spines['top'].set_visible(False)
                 ax.set_xticks([])
                 ax.set_yticks([])
-                ax.set_xlim([-0.08, 0.08])
                 ax.set_aspect('equal')
                 formatted_spotsize = format(spotsize[current_field], '.6f')
                 text = f"Field: {current_field}\nSpot size: {formatted_spotsize}"
@@ -325,7 +324,11 @@ class Diagnostics:
             else:
                 spo.append(square(current_field, finish))
         spotsize = spot_size(spo,finish)
-        plot(spo,spotsize)
+        
+        if graph:
+            plot(spo,spotsize)
+        
+        return spotsize
         
     def Viego(self):
         def Calc_Sag_Lens(current_surface, current_oal):
@@ -437,8 +440,12 @@ class Diagnostics:
                 
         for a in range(len(zr)):
             plt.plot(zr[a]["z"], zr[a]["r"], color = "black", linewidth = 1)
-        plt.plot(stp["z"],stp["lr"], color = "black", linewidth = 1)
-        plt.plot(stp["z"],stp["ur"], color = "black", linewidth = 1)
+        try:
+            plt.plot(stp["z"],stp["lr"], color = "black", linewidth = 1)
+            plt.plot(stp["z"],stp["ur"], color = "black", linewidth = 1)
+        except:
+            pass
+        
         plt.plot(img["z"],img["r"], color = "black", linewidth = 1)
         colorlst = ["red", "green", "blue", "brown", "magenta"]
         for i, ray in enumerate(rays):
