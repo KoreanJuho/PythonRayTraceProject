@@ -2,7 +2,7 @@ import Analysis as an
 
 ad = an.Diagnostics("e")
 
-spotsize = ad.SpotDiagram(type="square", graph=False)
-
-for s in spotsize:
-    print(s)
+ad.fielsago()
+ad.rimgo()
+spotsize = ad.SpotDiagram(type="square", graph=True)
+ad.Viego()
