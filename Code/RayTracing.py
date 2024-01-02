@@ -284,7 +284,7 @@ class FiniteRayTracing:
                 beta = -1 * curvature * vtc['Y'] / V
                 gamma = (1 - curvature * (1 + k) * vtc['Z']) / V
             else: 
-                vtc, alpha, beta, gamma = self.Calc_Asphere_Surface(current_surface, k, curvature, vtc, v_rsi)
+                vtc, alpha, beta, gamma = self.Calc_Asphere_Surface_ver2(current_surface, k, curvature, vtc, v_rsi)
             
             n_cos_theta = alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M'] + gamma * v_rsi[current_surface]['N']
             n_prime_cos_theta_prime = sqrt(self.lens_data[current_surface + 1]['RefractiveIndex'][wavelength]**2 - self.lens_data[current_surface]['RefractiveIndex'][wavelength]**2 + n_cos_theta**2)
@@ -314,8 +314,8 @@ class FiniteRayTracing:
                 sys.exit()
             
             r_square = vtc['X'] ** 2 + vtc['Y'] ** 2
-            z_prime = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature ** 2 * r_square))
             
+            z_prime = curvature * r_square / (1 + sqrt(1 - (1 + k) * curvature ** 2 * r_square))
             time = 2
             for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
                 z_prime += asp * r_square ** time
@@ -344,6 +344,47 @@ class FiniteRayTracing:
             different = z_prime - vtc['Z']
             
         return vtc, alpha, beta, gamma
+    
+    def sagf(self, current_surface, k, curvature, vtc, dx=0, dy=0):
+        r_square = (vtc['X']+dx) ** 2 + (vtc['Y']+dy) ** 2
+        result = curvature*r_square/(1+sqrt(1-(1+k)*curvature**2*r_square))
+        time = 2
+        for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
+            result += asp * r_square ** time
+            time += 1
+        return result
+    
+    def Calc_Asphere_Surface_ver2(self, current_surface, k, curvature, vtc, v_rsi):
+    
+        different = None
+        counter = 0
+        while different is None or (different >= 0.000000000001 or different <= -0.000000000001):
+            
+            counter += 1
+            delta = 1e-6
+            if counter > 20:
+                print(f"Calc ASP Loop exceeded 20 iterations at surface{current_surface+1}, stopping Code.")
+                sys.exit()
+            
+            z_prime = self.sagf(current_surface, k, curvature, vtc)
+            
+            round_z_over_round_x = (self.sagf(current_surface, k, curvature, vtc, dx=delta)-self.sagf(current_surface, k, curvature, vtc, dx=-delta))/(2*delta)
+            round_z_over_round_y = (self.sagf(current_surface, k, curvature, vtc, dy=delta)-self.sagf(current_surface, k, curvature, vtc, dy=-delta))/(2*delta)
+                
+            Vector_Size = sqrt(round_z_over_round_x ** 2 + round_z_over_round_y ** 2 + 1)
+            alpha = -1 * round_z_over_round_x / Vector_Size
+            beta = -1 * round_z_over_round_y / Vector_Size
+            gamma = 1 / Vector_Size
+
+            z = (alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M']) / v_rsi[current_surface]['N'] * vtc['Z'] + gamma * z_prime
+            z /= ((alpha * v_rsi[current_surface]['L'] + beta * v_rsi[current_surface]['M']) / v_rsi[current_surface]['N'] + gamma)
+            vtc['X'] = v_rsi[current_surface]['L'] / v_rsi[current_surface]['N'] * (z - vtc['Z']) + vtc['X']
+            vtc['Y'] = v_rsi[current_surface]['M'] / v_rsi[current_surface]['N'] * (z - vtc['Z']) + vtc['Y']
+            vtc['Z'] = z
+            
+            different = z_prime - vtc['Z']
+            
+        return vtc, alpha, beta, gamma
 
     def Newton_Rapson(self, target_surface, target, vtc, object_y, wavelength = None, XY = "Y", Change = False):
             
@@ -351,7 +392,7 @@ class FiniteRayTracing:
             wavelength = self.wavelength
         
         counter = 0
-        delta_M = 0.00000001
+        delta_M = 1e-6
         
         v_rsi = [vtc]
         self.Raytracing(v_rsi, wavelength)
@@ -359,8 +400,8 @@ class FiniteRayTracing:
         while True:
             counter += 1
             
-            if counter > 25:
-                print(f"Newton Rapson Loop exceeded 25 iterations at surface{target_surface+1}, stopping Code.")
+            if counter > 100:
+                print(f"Newton Rapson Loop exceeded 100 iterations at surface{target_surface+1}, stopping Code.")
                 sys.exit()
             
             f_xn1 = v_rsi[target_surface][XY]
@@ -395,7 +436,7 @@ class FiniteRayTracing:
             v_rsi = [vtc]
             self.Raytracing(v_rsi, wavelength)
 
-            if target + 0.00000000000001 >= v_rsi[target_surface][XY] >= target - 0.00000000000001:
+            if target + 1e-6 >= v_rsi[target_surface][XY] >= target - 1e-6:
                 return vtc
     
     def rsi(self, stp_x, stp_y, ojt_x, ojt_y, wavelength = None):
