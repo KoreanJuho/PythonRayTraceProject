@@ -345,13 +345,54 @@ class FiniteRayTracing:
             
         return vtc, alpha, beta, gamma
     
+    def QCN(self, n, x):
+        if n == 0:
+            return 1
+        elif n == 1:
+            return -5 + 6 * x
+        elif n == 2:
+            return 15 - 42 * x + 28 * x**2
+        elif n == 3:
+            return -35 + 168 * x - 252 * x**2 + 120 * x**3
+        elif n == 4:
+            return 70 - 504 * x + 1260 * x**2 - 1320 * x**3 + 495 * x**4
+        elif n == 5:
+            return -126 + 1260 * x - 4620 * x**2 + 7920 * x**3 - 6435 * x**4 + 2002 * x**5
+        elif n == 6:
+            return 210 - 2772 * x + 13860 * x**2 - 34320 * x**3 + 45045 * x**4 - 30030 * x**5 + 8008 * x**6
+        elif n == 7:
+            return -330 + 5544 * x - 36036 * x**2 + 120120 * x**3 - 225225 * x**4 + 240240 * x**5 - 136136 * x**6 + 31824 * x**7
+        elif n == 8:
+            return 495 - 10296 * x + 84084 * x**2 - 360360 * x**3 + 900900 * x**4 - 1361360 * x**5 + 1225224 * x**6 - 604656 * x**7 + 125970 * x**8
+        elif n == 9:
+            return -715 + 18018 * x - 180180 * x**2 + 960960 * x**3 - 3063060 * x**4 + 6126120 * x**5 - 7759752 * x**6 + 6046560 * x**7 - 2645370 * x**8 + 497420 * x**9
+        elif n == 10:
+            return 1001 - 30030 * x + 360360 * x**2 - 2333760 * x**3 + 9189180 * x**4 - 23279256 * x**5 + 38798760 * x**6 - 42325920 * x**7 + 29099070 * x**8 - 11440660 * x**9 + 1961256 * x**10
+        elif n == 11:
+            return -1365 + 48048 * x - 680680 * x**2 + 5250960 * x**3 - 24942060 * x**4 + 77597520 * x**5 - 162954792 * x**6 + 232792560 * x**7 - 223092870 * x**8 + 137287920 * x**9 - 49031400 * x**10 + 7726160 * x**11
+        elif n == 12:
+            return 1820 - 74256 * x + 1225224 * x**2 - 11085360 * x**3 + 62355150 * x**4 - 232792560 * x**5 + 597500904 * x**6 - 1070845776 * x**7 + 1338557220 * x**8 - 1144066000 * x**9 + 637408200 * x**10 - 208606320 * x**11 + 30421755 * x**12
+        elif n == 13:
+            return -2380 + 111384 * x - 2116296 * x**2 + 22170720 * x**3 - 145495350 * x**4 + 640179540 * x**5 - 1963217256 * x**6 + 4283383104 * x**7 - 6692786100 * x**8 + 7436429000 * x**9 - 5736673800 * x**10 + 2920488480 * x**11 - 882230895 * x**12 + 119759850 * x**13
+        elif n == 14:
+            return 3060 - 162792 * x + 3527160 * x**2 - 42325920 * x**3 + 320089770 * x**4 - 1636014380 * x**5 + 5889651768 * x**6 - 15297796800 * x**7 + 29002073100 * x**8 - 40156716600 * x**9 + 40156716600 * x**10 - 28231388640 * x**11 + 13233463425 * x**12 - 3712555350 * x**13 + 471435600 * x**14
+        elif n == 15:
+            return -3876 + 232560 * x - 5697720 * x**2 + 77597520 * x**3 - 669278610 * x**4 + 3926434512 * x**5 - 16360143800 * x**6 + 49717839600 * x**7 - 111865139100 * x**8 + 187398010800 * x**9 - 232908956280 * x**10 + 211735414800 * x**11 - 136745788725 * x**12 + 59400885600 * x**13 - 15557374800 * x**14 + 1855967520 * x**15
+        else:
+            raise ValueError("Invalid value of n")
+        
     def sagf(self, current_surface, k, curvature, vtc, dx=0, dy=0):
+        
         r_square = (vtc['X']+dx) ** 2 + (vtc['Y']+dy) ** 2
         result = curvature*r_square/(1+sqrt(1-(1+k)*curvature**2*r_square))
-        time = 2
-        for asp in self.lens_data[current_surface + 1]['Aspheric_coefficients'].values():
-            result += asp * r_square ** time
-            time += 1
+        if self.lens_data[current_surface + 1]['Surface_type'] == 'Asphere':
+            for time, asp in enumerate(self.lens_data[current_surface + 1]['Aspheric_coefficients'].values(),start=2):
+                result += asp * r_square ** time         
+        elif self.lens_data[current_surface + 1]['Surface_type'] == 'Qcon Asphere':
+            #u_square = r_square / r_max_square
+            # for time, asp in enumerate(self.lens_data[current_surface + 1]['Aspheric_coefficients'].values()):
+            #     result += u_square**2 * asp * self.QCN(time, u_square)
+            print("Qcon")
         return result
     
     def Calc_Asphere_Surface_ver2(self, current_surface, k, curvature, vtc, v_rsi):
